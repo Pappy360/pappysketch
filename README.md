@@ -1,2 +1,2 @@
 # pappysketch
-Learn 
+Learn Earn Return
