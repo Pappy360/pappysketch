@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PappySketch Interactive Masonry</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PappySketch</title>
+
 <style>
   body {
     margin: 0;
-    padding: 0;
     font-family: Arial, sans-serif;
     background: #f5f5f5;
   }
@@ -19,56 +19,63 @@
     color: white;
   }
 
-  header h1 {
-    margin: 0;
-    font-size: 2em;
-  }
-
-  header p {
-    margin: 5px 0 0 0;
-    font-style: italic;
-  }
-
-  #upload {
+  #upload, #saveLayout, #loadLayout {
     position: fixed;
-    top: 10px;
     left: 10px;
     z-index: 1000;
-    opacity: 0.9;
-    padding: 5px;
-    border: 1px solid #ccc;
+    padding: 6px 10px;
     background: white;
+    border: 1px solid #ccc;
     cursor: pointer;
   }
 
+  #upload { top: 10px; }
+  #saveLayout { top: 50px; }
+  #loadLayout { top: 90px; }
+
   .gallery {
-    margin: 20px;
+    position: relative;
+    width: 100vw;
+    height: calc(100vh - 80px);
+    overflow: hidden;
   }
 
   .gallery img {
-    width: 200px;
-    margin-bottom: 10px;
+    position: absolute;
     cursor: grab;
     user-select: none;
-    float: left; /* required for Masonry layout */
   }
 
   .dragging {
     opacity: 0.7;
-    position: absolute;
-    z-index: 10000;
     pointer-events: none;
+    z-index: 2000;
   }
 
-  @media (max-width: 900px) {
-    .gallery img { width: 150px; }
+  /* Editor panel */
+  #editor {
+    position: fixed;
+    right: 10px;
+    top: 80px;
+    width: 220px;
+    background: rgba(255,255,255,0.95);
+    border: 1px solid #ccc;
+    padding: 10px;
+    z-index: 1500;
+    font-size: 12px;
   }
 
-  @media (max-width: 600px) {
-    .gallery img { width: 100%; }
+  #editor label {
+    display: block;
+    margin-bottom: 10px;
+  }
+
+  #editor input {
+    width: 100%;
   }
 </style>
 </head>
+
 <body>
 
 <header>
@@ -76,103 +83,175 @@
   <p>Learn • Earn • Return</p>
 </header>
 
-<input type="file" id="upload" multiple>
+<input type="file" id="upload" multiple />
+<button id="saveLayout">Save Layout</button>
+<button id="loadLayout">Load Layout</button>
+
 <div class="gallery" id="gallery"></div>
 
-<!-- Masonry.js CDN -->
-<script src="https://unpkg.com/masonry-layout@4/dist/masonry.pkgd.min.js"></script>
+<div id="editor">
+  <h3>Edit Photo</h3>
+
+  <label>Brightness
+    <input type="range" id="bright" min="0" max="200" value="100">
+  </label>
+
+  <label>Contrast
+    <input type="range" id="contrast" min="0" max="200" value="100">
+  </label>
+
+  <label>Saturation
+    <input type="range" id="saturate" min="0" max="200" value="100">
+  </label>
+
+  <label>Rotate
+    <input type="range" id="rotate" min="-180" max="180" value="0">
+  </label>
+
+  <button id="resetEdit">Reset</button>
+</div>
 
 <script>
-const upload = document.getElementById('upload');
 const gallery = document.getElementById('gallery');
+const upload = document.getElementById('upload');
 
-let msnry;
-
-// Initialize Masonry
-function initMasonry() {
-  msnry = new Masonry(gallery, {
-    itemSelector: 'img',
-    columnWidth: 200,
-    gutter: 10,
-    transitionDuration: '0.3s'
-  });
-}
-
-// Drag & drop variables
-let draggedImg = null;
+let dragged = null;
 let offsetX = 0;
 let offsetY = 0;
+let selectedImg = null;
 
-upload.addEventListener('change', function(e) {
+// Upload images
+upload.addEventListener('change', e => {
   Array.from(e.target.files).forEach(file => {
     const reader = new FileReader();
-    reader.onload = function(evt) {
+    reader.onload = evt => {
       const img = document.createElement('img');
       img.src = evt.target.result;
-      img.draggable = false;
+      img.style.left = '100px';
+      img.style.top = '100px';
+      img.style.width = '200px';
+      makeInteractive(img);
       gallery.appendChild(img);
-
-      img.onload = () => {
-        if (!msnry) initMasonry();
-        else msnry.appended(img);
-      }
-
-      img.addEventListener('mousedown', startDrag);
-      img.addEventListener('touchstart', startDrag);
-    }
+    };
     reader.readAsDataURL(file);
   });
 });
 
-// Drag functions
+// Make image interactive
+function makeInteractive(img) {
+  img.addEventListener('mousedown', startDrag);
+  img.addEventListener('click', () => {
+    selectedImg = img;
+    loadSliders();
+  });
+}
+
+// Drag logic
 function startDrag(e) {
-  e.preventDefault();
-  draggedImg = e.target;
-
-  const rect = draggedImg.getBoundingClientRect();
-  const pageX = e.touches ? e.touches[0].pageX : e.pageX;
-  const pageY = e.touches ? e.touches[0].pageY : e.pageY;
-
-  offsetX = pageX - rect.left;
-  offsetY = pageY - rect.top;
-
-  draggedImg.classList.add('dragging');
-  draggedImg.style.width = rect.width + 'px';
-  draggedImg.style.height = rect.height + 'px';
+  dragged = e.target;
+  dragged.classList.add('dragging');
+  offsetX = e.offsetX;
+  offsetY = e.offsetY;
 
   window.addEventListener('mousemove', drag);
   window.addEventListener('mouseup', drop);
-  window.addEventListener('touchmove', drag);
-  window.addEventListener('touchend', drop);
 }
 
 function drag(e) {
-  if (!draggedImg) return;
-  const pageX = e.touches ? e.touches[0].pageX : e.pageX;
-  const pageY = e.touches ? e.touches[0].pageY : e.pageY;
-  draggedImg.style.left = (pageX - offsetX) + 'px';
-  draggedImg.style.top = (pageY - offsetY) + 'px';
+  if (!dragged) return;
+  dragged.style.left = (e.pageX - offsetX) + 'px';
+  dragged.style.top = (e.pageY - offsetY) + 'px';
 }
 
 function drop() {
-  if (!draggedImg) return;
+  if (!dragged) return;
+  dragged.classList.remove('dragging');
+  dragged = null;
 
-  draggedImg.classList.remove('dragging');
-  draggedImg.style.position = '';
-  draggedImg.style.left = '';
-  draggedImg.style.top = '';
-
-  // Re-layout Masonry after drop
-  msnry.layout();
-
-  draggedImg = null;
   window.removeEventListener('mousemove', drag);
   window.removeEventListener('mouseup', drop);
-  window.removeEventListener('touchmove', drag);
-  window.removeEventListener('touchend', drop);
 }
+
+// Editor controls
+const bright = document.getElementById('bright');
+const contrast = document.getElementById('contrast');
+const saturate = document.getElementById('saturate');
+const rotate = document.getElementById('rotate');
+
+[bright, contrast, saturate, rotate].forEach(slider => {
+  slider.addEventListener('input', applyFilters);
+});
+
+function applyFilters() {
+  if (!selectedImg) return;
+
+  selectedImg.style.filter =
+    `brightness(${bright.value}%) contrast(${contrast.value}%) saturate(${saturate.value}%)`;
+  selectedImg.style.transform = `rotate(${rotate.value}deg)`;
+
+  selectedImg.dataset.bright = bright.value;
+  selectedImg.dataset.contrast = contrast.value;
+  selectedImg.dataset.saturate = saturate.value;
+  selectedImg.dataset.rotate = rotate.value;
+}
+
+function loadSliders() {
+  bright.value = selectedImg.dataset.bright || 100;
+  contrast.value = selectedImg.dataset.contrast || 100;
+  saturate.value = selectedImg.dataset.saturate || 100;
+  rotate.value = selectedImg.dataset.rotate || 0;
+  applyFilters();
+}
+
+document.getElementById('resetEdit').onclick = () => {
+  if (!selectedImg) return;
+  bright.value = contrast.value = saturate.value = 100;
+  rotate.value = 0;
+  applyFilters();
+};
+
+// Save layout
+document.getElementById('saveLayout').onclick = () => {
+  const data = [];
+  document.querySelectorAll('.gallery img').forEach(img => {
+    data.push({
+      src: img.src,
+      x: img.style.left,
+      y: img.style.top,
+      w: img.style.width,
+      b: img.dataset.bright || 100,
+      c: img.dataset.contrast || 100,
+      s: img.dataset.saturate || 100,
+      r: img.dataset.rotate || 0
+    });
+  });
+  localStorage.setItem('pappysketch-layout', JSON.stringify(data));
+  alert('Layout saved ✨');
+};
+
+// Load layout
+document.getElementById('loadLayout').onclick = () => {
+  const saved = localStorage.getItem('pappysketch-layout');
+  if (!saved) return alert('No saved layout');
+
+  gallery.innerHTML = '';
+  JSON.parse(saved).forEach(item => {
+    const img = document.createElement('img');
+    img.src = item.src;
+    img.style.left = item.x;
+    img.style.top = item.y;
+    img.style.width = item.w;
+    img.dataset.bright = item.b;
+    img.dataset.contrast = item.c;
+    img.dataset.saturate = item.s;
+    img.dataset.rotate = item.r;
+    makeInteractive(img);
+    gallery.appendChild(img);
+    selectedImg = img;
+    loadSliders();
+  });
+};
 </script>
 
 </body>
 </html>
-
