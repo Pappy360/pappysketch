@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PappySketch</title>
+<title>PappySketch Grid</title>
 
 <style>
 :root {
@@ -45,6 +46,10 @@ header {
   left:0;
   right:250px;
   bottom:0;
+  background-image:
+    linear-gradient(to right, #ccc 1px, transparent 1px),
+    linear-gradient(to bottom, #ccc 1px, transparent 1px);
+  background-size: 50px 50px; /* GRID_SIZE */
   overflow:hidden;
 }
 .gallery img {
@@ -57,6 +62,7 @@ header {
   outline:2px solid var(--accent);
 }
 .editor {
+  display:none; /* hidden by default */
   position:fixed;
   top:60px;
   right:0;
@@ -66,6 +72,12 @@ header {
   border-left:1px solid var(--border);
   padding:12px;
   overflow:auto;
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+}
+.editor.show {
+  display:block;
+  transform: translateX(0);
 }
 .editor h3 { font-size:14px; margin:10px 0; }
 .editor label { font-size:12px; display:block; margin-bottom:8px; }
@@ -78,16 +90,12 @@ header {
   margin-top:6px;
   cursor:pointer;
 }
-
-/* Disabled styling */
 .editor input:disabled, .editor button:disabled {
   opacity:0.5;
   cursor:not-allowed;
 }
-
 .primary { background:var(--accent); color:white; }
 .danger { background:#ff3b30; color:white; }
-
 .crop-box {
   position:absolute;
   border:2px dashed var(--accent);
@@ -98,7 +106,7 @@ header {
 </head>
 
 <body>
-<header>PappySketch</header>
+<header>PappySketch Grid</header>
 
 <div class="controls">
   <input type="file" id="upload" multiple>
@@ -126,6 +134,8 @@ header {
 </div>
 
 <script>
+const GRID_SIZE = 50;
+
 const gallery = document.getElementById('gallery');
 const upload = document.getElementById('upload');
 const save = document.getElementById('save');
@@ -138,6 +148,7 @@ const s = document.getElementById('s');
 const w = document.getElementById('w');
 const r = document.getElementById('r');
 
+const editor = document.querySelector('.editor');
 const editorControls = document.querySelectorAll('.editor input, .editor button');
 
 let selected = null;
@@ -147,9 +158,9 @@ let dx = 0, dy = 0;
 let cropBox = null;
 let cropStart = null;
 
-// Enable/disable editor based on selection
 function updateEditorState() {
   editorControls.forEach(el => el.disabled = !selected);
+  if(!selected) editor.classList.remove('show');
 }
 
 upload.onchange = e => {
@@ -191,7 +202,18 @@ window.onmousemove = e => {
   }
 };
 
-window.onmouseup = () => { drag = null; cropStart = null; };
+function snapToGrid(img){
+  const left = parseInt(img.style.left);
+  const top = parseInt(img.style.top);
+  img.style.left = Math.round(left / GRID_SIZE) * GRID_SIZE + 'px';
+  img.style.top = Math.round(top / GRID_SIZE) * GRID_SIZE + 'px';
+}
+
+window.onmouseup = () => {
+  if(drag) snapToGrid(drag);
+  drag = null;
+  cropStart = null;
+};
 
 function select(img){
   document.querySelectorAll('.gallery img').forEach(i => i.classList.remove('selected'));
@@ -199,6 +221,7 @@ function select(img){
   img.classList.add('selected');
   loadSliders();
   updateEditorState();
+  editor.classList.add('show'); // show editor
 }
 
 function applyEdits(){
