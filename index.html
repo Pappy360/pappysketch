@@ -20,18 +20,29 @@
       color: white;
     }
 
+    header h1 {
+      margin: 0;
+      font-size: 2em;
+    }
+
+    header p {
+      margin: 5px 0 0 0;
+      font-style: italic;
+    }
+
     .gallery {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 10px;
+      column-count: 3;       /* Number of columns */
+      column-gap: 10px;      /* Space between columns */
       padding: 20px;
     }
 
     .gallery img {
       width: 100%;
       display: block;
+      margin-bottom: 10px;   /* Vertical spacing between images */
       border-radius: 8px;
       transition: transform 0.3s, box-shadow 0.3s;
+      break-inside: avoid;   /* Prevent images from breaking between columns */
     }
 
     .gallery img:hover {
@@ -50,6 +61,18 @@
       border: 1px solid #ccc;
       background: white;
       cursor: pointer;
+    }
+
+    @media (max-width: 900px) {
+      .gallery {
+        column-count: 2;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .gallery {
+        column-count: 1;
+      }
     }
   </style>
 </head>
