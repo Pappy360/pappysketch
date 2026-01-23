@@ -41,12 +41,17 @@ header {
 }
 .gallery {
   position:absolute;
-  inset:60px 260px 0 0;
+  top:60px;
+  left:0;
+  right:250px;
+  bottom:0;
+  overflow:hidden;
 }
 .gallery img {
   position:absolute;
   cursor:grab;
   touch-action:none;
+  user-select:none;
 }
 .gallery img.selected {
   outline:2px solid var(--accent);
@@ -71,7 +76,15 @@ header {
   border-radius:8px;
   border:none;
   margin-top:6px;
+  cursor:pointer;
 }
+
+/* Disabled styling */
+.editor input:disabled, .editor button:disabled {
+  opacity:0.5;
+  cursor:not-allowed;
+}
+
 .primary { background:var(--accent); color:white; }
 .danger { background:#ff3b30; color:white; }
 
@@ -79,6 +92,7 @@ header {
   position:absolute;
   border:2px dashed var(--accent);
   pointer-events:none;
+  z-index:9999;
 }
 </style>
 </head>
@@ -97,144 +111,208 @@ header {
 
 <div class="editor">
   <h3>Adjust</h3>
-  <label>Brightness <input type="range" id="b" min="50" max="150" value="100"></label>
-  <label>Contrast <input type="range" id="c" min="50" max="150" value="100"></label>
-  <label>Saturation <input type="range" id="s" min="0" max="200" value="100"></label>
-  <label>Warmth <input type="range" id="w" min="-50" max="50" value="0"></label>
-  <label>Straighten <input type="range" id="r" min="-45" max="45" value="0"></label>
+  <label>Brightness <input type="range" id="b" min="50" max="150" value="100" disabled></label>
+  <label>Contrast <input type="range" id="c" min="50" max="150" value="100" disabled></label>
+  <label>Saturation <input type="range" id="s" min="0" max="200" value="100" disabled></label>
+  <label>Warmth <input type="range" id="w" min="-50" max="50" value="0" disabled></label>
+  <label>Straighten <input type="range" id="r" min="-45" max="45" value="0" disabled></label>
 
   <h3>Crop</h3>
-  <button class="primary" onclick="startCrop()">Start Crop</button>
-  <button onclick="applyCrop()">Apply Crop</button>
+  <button class="primary" onclick="startCrop()" disabled>Start Crop</button>
+  <button onclick="applyCrop()" disabled>Apply Crop</button>
 
-  <button onclick="resetEdits()">Reset</button>
-  <button class="danger" onclick="deleteImg()">Delete Image</button>
+  <button onclick="resetEdits()" disabled>Reset</button>
+  <button class="danger" onclick="deleteImg()" disabled>Delete Image</button>
 </div>
 
 <script>
 const gallery = document.getElementById('gallery');
-let selected=null, drag=null, dx=0, dy=0;
-let cropBox=null, cropStart=null;
+const upload = document.getElementById('upload');
+const save = document.getElementById('save');
+const load = document.getElementById('load');
+const exportBtn = document.getElementById('export');
 
-upload.onchange=e=>{
-  [...e.target.files].forEach(f=>{
-    const img=new Image();
-    img.src=URL.createObjectURL(f);
-    img.style.left='100px';
-    img.style.top='100px';
-    img.style.width='220px';
-    img.dataset.b=100; img.dataset.c=100; img.dataset.s=100; img.dataset.w=0; img.dataset.r=0;
-    makeInteractive(img);
-    gallery.appendChild(img);
+const b = document.getElementById('b');
+const c = document.getElementById('c');
+const s = document.getElementById('s');
+const w = document.getElementById('w');
+const r = document.getElementById('r');
+
+const editorControls = document.querySelectorAll('.editor input, .editor button');
+
+let selected = null;
+let drag = null;
+let dx = 0, dy = 0;
+
+let cropBox = null;
+let cropStart = null;
+
+// Enable/disable editor based on selection
+function updateEditorState() {
+  editorControls.forEach(el => el.disabled = !selected);
+}
+
+upload.onchange = e => {
+  [...e.target.files].forEach(f => {
+    const img = new Image();
+    img.src = URL.createObjectURL(f);
+    img.style.left = '100px';
+    img.style.top = '100px';
+    img.style.width = '220px';
+    img.dataset.b = 100; img.dataset.c = 100; img.dataset.s = 100; img.dataset.w = 0; img.dataset.r = 0;
+
+    img.onload = () => {
+      img.style.height = img.naturalHeight * (220 / img.naturalWidth) + 'px';
+      makeInteractive(img);
+      gallery.appendChild(img);
+    };
   });
 };
 
 function makeInteractive(img){
-  img.onmousedown=e=>{
+  img.onmousedown = e => {
     select(img);
-    drag=img; dx=e.offsetX; dy=e.offsetY;
+    drag = img;
+    dx = e.pageX - parseInt(img.style.left);
+    dy = e.pageY - parseInt(img.style.top);
   };
 }
 
-window.onmousemove=e=>{
+window.onmousemove = e => {
   if(drag){
-    drag.style.left=e.pageX-dx+'px';
-    drag.style.top=e.pageY-dy+'px';
+    drag.style.left = e.pageX - dx + 'px';
+    drag.style.top = e.pageY - dy + 'px';
   }
   if(cropBox && cropStart){
-    cropBox.style.width=Math.abs(e.pageX-cropStart.x)+'px';
-    cropBox.style.height=Math.abs(e.pageY-cropStart.y)+'px';
-    cropBox.style.left=Math.min(e.pageX,cropStart.x)+'px';
-    cropBox.style.top=Math.min(e.pageY,cropStart.y)+'px';
+    cropBox.style.width = Math.abs(e.pageX - cropStart.x) + 'px';
+    cropBox.style.height = Math.abs(e.pageY - cropStart.y) + 'px';
+    cropBox.style.left = Math.min(e.pageX, cropStart.x) + 'px';
+    cropBox.style.top = Math.min(e.pageY, cropStart.y) + 'px';
   }
 };
 
-window.onmouseup=()=>{ drag=null; cropStart=null; };
+window.onmouseup = () => { drag = null; cropStart = null; };
 
 function select(img){
-  document.querySelectorAll('.gallery img').forEach(i=>i.classList.remove('selected'));
-  selected=img; img.classList.add('selected');
+  document.querySelectorAll('.gallery img').forEach(i => i.classList.remove('selected'));
+  selected = img;
+  img.classList.add('selected');
   loadSliders();
+  updateEditorState();
 }
 
 function applyEdits(){
-  if(!selected)return;
-  selected.style.filter=
+  if(!selected) return;
+  selected.style.filter =
     `brightness(${b.value}%) contrast(${c.value}%) saturate(${s.value}%) sepia(${w.value>0?w.value/100:0})`;
-  selected.style.transform=`rotate(${r.value}deg)`;
-  Object.assign(selected.dataset,{b:b.value,c:c.value,s:s.value,w:w.value,r:r.value});
+  selected.style.transform = `rotate(${r.value}deg)`;
+  Object.assign(selected.dataset, {b:b.value, c:c.value, s:s.value, w:w.value, r:r.value});
 }
-[b,c,s,w,r].forEach(x=>x.oninput=applyEdits);
+
+[b,c,s,w,r].forEach(x => x.oninput = applyEdits);
 
 function loadSliders(){
-  b.value=selected.dataset.b||100;
-  c.value=selected.dataset.c||100;
-  s.value=selected.dataset.s||100;
-  w.value=selected.dataset.w||0;
-  r.value=selected.dataset.r||0;
+  if(!selected) return;
+  b.value = selected.dataset.b || 100;
+  c.value = selected.dataset.c || 100;
+  s.value = selected.dataset.s || 100;
+  w.value = selected.dataset.w || 0;
+  r.value = selected.dataset.r || 0;
   applyEdits();
 }
 
 function resetEdits(){
-  if(!selected)return;
-  selected.style.filter='';
-  selected.style.transform='';
+  if(!selected) return;
+  selected.style.filter = '';
+  selected.style.transform = '';
+  Object.assign(selected.dataset, {b:100, c:100, s:100, w:0, r:0});
 }
 
 function deleteImg(){
-  if(!selected)return;
-  selected.remove(); selected=null;
+  if(!selected) return;
+  selected.remove();
+  selected = null;
+  updateEditorState();
 }
 
 function startCrop(){
-  if(!selected)return;
-  cropBox=document.createElement('div');
-  cropBox.className='crop-box';
+  if(!selected) return;
+  cropBox = document.createElement('div');
+  cropBox.className = 'crop-box';
   document.body.appendChild(cropBox);
-  window.onmousedown=e=>{
-    cropStart={x:e.pageX,y:e.pageY};
-    cropBox.style.left=e.pageX+'px';
-    cropBox.style.top=e.pageY+'px';
+  cropStart = null;
+
+  window.onmousedown = e => {
+    if(!selected) return;
+    cropStart = {x:e.pageX, y:e.pageY};
+    cropBox.style.left = e.pageX + 'px';
+    cropBox.style.top = e.pageY + 'px';
   };
 }
 
 function applyCrop(){
-  if(!cropBox||!selected)return;
-  const r=cropBox.getBoundingClientRect();
-  selected.style.clipPath=`inset(${r.top-selected.offsetTop}px ${selected.offsetLeft+selected.width-r.right}px ${selected.offsetTop+selected.height-r.bottom}px ${r.left-selected.offsetLeft}px)`;
-  cropBox.remove(); cropBox=null;
+  if(!cropBox || !selected) return;
+  const r = cropBox.getBoundingClientRect();
+  const imgRect = selected.getBoundingClientRect();
+  const top = r.top - imgRect.top;
+  const left = r.left - imgRect.left;
+  const bottom = imgRect.bottom - r.bottom;
+  const right = imgRect.right - r.right;
+  selected.style.clipPath = `inset(${top}px ${right}px ${bottom}px ${left}px)`;
+  cropBox.remove();
+  cropBox = null;
 }
 
-save.onclick=()=>{
-  const data=[...gallery.children].map(i=>({src:i.src,style:i.style.cssText,dataset:i.dataset}));
-  localStorage.setItem('pappysketch',JSON.stringify(data));
+save.onclick = () => {
+  const data = [...gallery.children].map(i => ({
+    src: i.src,
+    style: i.style.cssText,
+    dataset: i.dataset
+  }));
+  localStorage.setItem('pappysketch', JSON.stringify(data));
   alert('Saved ✨');
 };
 
-load.onclick=()=>{
-  gallery.innerHTML='';
-  JSON.parse(localStorage.getItem('pappysketch')||[]).forEach(d=>{
-    const img=new Image();
-    img.src=d.src; img.style.cssText=d.style;
-    img.dataset=d.dataset;
-    makeInteractive(img);
-    gallery.appendChild(img);
+load.onclick = () => {
+  gallery.innerHTML = '';
+  JSON.parse(localStorage.getItem('pappysketch') || '[]').forEach(d => {
+    const img = new Image();
+    img.src = d.src;
+    img.style.cssText = d.style;
+    img.dataset = d.dataset;
+    img.onload = () => {
+      makeInteractive(img);
+      gallery.appendChild(img);
+    };
   });
 };
 
-export.onclick=()=>{
-  const c=document.createElement('canvas');
-  const ctx=c.getContext('2d');
-  c.width=gallery.clientWidth;
-  c.height=gallery.clientHeight;
-  [...gallery.children].forEach(img=>{
-    ctx.drawImage(img,parseInt(img.style.left),parseInt(img.style.top),img.width,img.height);
+exportBtn.onclick = () => {
+  const c = document.createElement('canvas');
+  const ctx = c.getContext('2d');
+  c.width = gallery.clientWidth;
+  c.height = gallery.clientHeight;
+  [...gallery.children].forEach(img => {
+    const x = parseInt(img.style.left);
+    const y = parseInt(img.style.top);
+    const w = img.width;
+    const h = img.height;
+    ctx.save();
+    ctx.translate(x + w/2, y + h/2);
+    ctx.rotate((parseFloat(img.dataset.r)||0) * Math.PI/180);
+    ctx.filter =
+      `brightness(${img.dataset.b}%) contrast(${img.dataset.c}%) saturate(${img.dataset.s}%) sepia(${img.dataset.w>0?img.dataset.w/100:0})`;
+    ctx.drawImage(img, -w/2, -h/2, w, h);
+    ctx.restore();
   });
-  const a=document.createElement('a');
-  a.href=c.toDataURL('image/png');
-  a.download='pappysketch.png';
+  const a = document.createElement('a');
+  a.href = c.toDataURL('image/png');
+  a.download = 'pappysketch.png';
   a.click();
 };
+
+// Disable editor initially
+updateEditorState();
 </script>
 </body>
 </html>
