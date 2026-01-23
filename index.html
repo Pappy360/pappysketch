@@ -1,114 +1,73 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PappySketch Smart Canvas</title>
-<style>
-body {
-  margin:0;
-  font-family:-apple-system,BlinkMacSystemFont,sans-serif;
-  background:#f5f5f7;
-  overflow:hidden;
-}
-header {
-  height:60px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background:#fff;
-  border-bottom:1px solid #d1d1d6;
-  font-weight:600;
-}
-.controls {
-  position:fixed;
-  top:70px;
-  left:10px;
-}
-.controls input {
-  padding:8px 12px;
-  border-radius:8px;
-  border:1px solid #d1d1d6;
-  background:white;
-  cursor:pointer;
-}
-.gallery {
-  position:absolute;
-  top:60px;
-  left:0;
-  right:0;
-  bottom:0;
-  overflow:hidden;
-}
-.gallery img {
-  position:absolute;
-  cursor:grab;
-  touch-action:none;
-  user-select:none;
-  transition: left 0.2s, top 0.2s;
-}
-</style>
-</head>
-<body>
-<header>PappySketch Smart Canvas</header>
-
-<div class="controls">
-  <input type="file" id="upload" multiple>
-</div>
-
-<div class="gallery" id="gallery"></div>
-
 <script>
 const gallery = document.getElementById('gallery');
 const upload = document.getElementById('upload');
 const spacing = 10;
 
-let drag = null, dx = 0, dy = 0;
+let drag = null, offsetX = 0, offsetY = 0;
 
+// Handle image uploads
 upload.onchange = e => {
   const files = [...e.target.files];
   const galleryRect = gallery.getBoundingClientRect();
-  const imgs = [];
+  const newImages = [];
 
-  files.forEach(f => {
+  files.forEach(file => {
     const img = new Image();
-    img.src = URL.createObjectURL(f);
-    img.onload = () => {
-      // set max width
-      img.style.width = Math.min(150, img.naturalWidth) + 'px';
-      img.style.height = img.naturalHeight * (parseInt(img.style.width)/img.naturalWidth) + 'px';
-      makeDraggable(img);
-      gallery.appendChild(img);
-      imgs.push(img);
+    img.src = URL.createObjectURL(file);
 
-      // auto-arrange images
-      if(imgs.length === files.length){
-        smartArrange(imgs, galleryRect);
-      }
+    img.onload = () => {
+      // Scale images if too wide
+      const maxW = 150;
+      img.style.width = Math.min(maxW, img.naturalWidth) + 'px';
+      img.style.height = img.naturalHeight * (parseInt(img.style.width)/img.naturalWidth) + 'px';
+
+      // Set initial position
+      img.style.position = 'absolute';
+      img.style.left = '0px';
+      img.style.top = '0px';
+      img.style.cursor = 'grab';
+      img.style.transition = 'left 0.2s, top 0.2s';
+
+      makeDraggable(img);
+
+      gallery.appendChild(img);
+      newImages.push(img);
+
+      // Auto-arrange all images including previous ones
+      const allImages = [...gallery.querySelectorAll('img')];
+      smartArrange(allImages, galleryRect);
+
+      // Release memory
+      URL.revokeObjectURL(img.src);
     };
   });
+
+  // Reset file input so same file can be re-uploaded
+  upload.value = '';
 };
 
+// Make images draggable
 function makeDraggable(img){
   img.onmousedown = e => {
     drag = img;
-    dx = e.pageX - parseInt(img.style.left);
-    dy = e.pageY - parseInt(img.style.top);
-    img.style.transition = "none"; // smooth dragging
+    offsetX = e.pageX - parseInt(img.style.left);
+    offsetY = e.pageY - parseInt(img.style.top);
+    img.style.transition = 'none';
+    img.style.cursor = 'grabbing';
   };
 }
 
 window.onmousemove = e => {
-  if(drag){
-    drag.style.left = e.pageX - dx + 'px';
-    drag.style.top = e.pageY - dy + 'px';
-    pushOthers(drag);
-  }
+  if(!drag) return;
+  drag.style.left = e.pageX - offsetX + 'px';
+  drag.style.top = e.pageY - offsetY + 'px';
+  pushOthers(drag);
 };
 
 window.onmouseup = () => {
   if(drag){
-    drag.style.transition = "left 0.2s, top 0.2s";
+    drag.style.transition = 'left 0.2s, top 0.2s';
+    drag.style.cursor = 'grab';
   }
   drag = null;
 };
@@ -117,15 +76,20 @@ window.onmouseup = () => {
 function smartArrange(images, rect){
   let x = spacing, y = spacing;
   let rowHeight = 0;
+
   images.forEach(img => {
-    const w = parseInt(img.style.width), h = parseInt(img.style.height);
+    const w = parseInt(img.style.width);
+    const h = parseInt(img.style.height);
+
     if(x + w + spacing > rect.width){
       x = spacing;
       y += rowHeight + spacing;
       rowHeight = 0;
     }
+
     img.style.left = x + 'px';
     img.style.top = y + 'px';
+
     x += w + spacing;
     rowHeight = Math.max(rowHeight, h);
   });
@@ -141,25 +105,31 @@ function pushOthers(dragImg){
     const r = img.getBoundingClientRect();
 
     if(isOverlapping(dragRect, r)){
-      // push away
-      if(dragRect.top < r.top){
-        img.style.top = parseInt(img.style.top) + (dragRect.bottom - r.top + spacing) + 'px';
-      } else {
-        img.style.top = parseInt(img.style.top) - (r.bottom - dragRect.top + spacing) + 'px';
+      let topMove = 0, leftMove = 0;
+
+      if(dragRect.bottom > r.top && dragRect.top < r.top){
+        topMove = dragRect.bottom - r.top + spacing;
+      } else if(dragRect.top < r.bottom && dragRect.bottom > r.bottom){
+        topMove = dragRect.top - r.bottom - spacing;
       }
-      if(dragRect.left < r.left){
-        img.style.left = parseInt(img.style.left) + (dragRect.right - r.left + spacing) + 'px';
-      } else {
-        img.style.left = parseInt(img.style.left) - (r.right - dragRect.left + spacing) + 'px';
+
+      if(dragRect.right > r.left && dragRect.left < r.left){
+        leftMove = dragRect.right - r.left + spacing;
+      } else if(dragRect.left < r.right && dragRect.right > r.right){
+        leftMove = dragRect.left - r.right - spacing;
       }
+
+      img.style.top = parseInt(img.style.top) + topMove + 'px';
+      img.style.left = parseInt(img.style.left) + leftMove + 'px';
     }
   });
 }
 
+// Check overlap
 function isOverlapping(a, b){
-  return !(a.right + spacing < b.left || 
-           a.left - spacing > b.right || 
-           a.bottom + spacing < b.top || 
+  return !(a.right + spacing < b.left ||
+           a.left - spacing > b.right ||
+           a.bottom + spacing < b.top ||
            a.top - spacing > b.bottom);
 }
 
@@ -170,5 +140,3 @@ window.onresize = () => {
   if(imgs.length) smartArrange(imgs, galleryRect);
 };
 </script>
-</body>
-</html>
