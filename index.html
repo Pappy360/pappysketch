@@ -1,104 +1,178 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PappySketch Gallery</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      font-family: Arial, sans-serif;
-      background: #f5f5f5;
-      color: #333;
-    }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PappySketch Interactive Masonry</title>
+<style>
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+    background: #f5f5f5;
+  }
 
-    header {
-      text-align: center;
-      padding: 20px;
-      background: #4CAF50;
-      color: white;
-    }
+  header {
+    text-align: center;
+    padding: 20px;
+    background: #4CAF50;
+    color: white;
+  }
 
-    header h1 {
-      margin: 0;
-      font-size: 2em;
-    }
+  header h1 {
+    margin: 0;
+    font-size: 2em;
+  }
 
-    header p {
-      margin: 5px 0 0 0;
-      font-style: italic;
-    }
+  header p {
+    margin: 5px 0 0 0;
+    font-style: italic;
+  }
 
-    .gallery {
-      margin: 20px;
-    }
+  #upload {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    z-index: 1000;
+    opacity: 0.9;
+    padding: 5px;
+    border: 1px solid #ccc;
+    background: white;
+    cursor: pointer;
+  }
 
-    .gallery img {
-      width: 200px;           /* Masonry column width */
-      margin-bottom: 10px;
-      border-radius: 8px;
-      transition: transform 0.3s, box-shadow 0.3s;
-    }
+  .gallery {
+    margin: 20px;
+  }
 
-    .gallery img:hover {
-      transform: scale(1.05);
-      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-    }
+  .gallery img {
+    width: 200px;
+    margin-bottom: 10px;
+    cursor: grab;
+    user-select: none;
+    float: left; /* required for Masonry layout */
+  }
 
-    #upload {
-      position: fixed;
-      top: 10px;
-      left: 10px;
-      z-index: 1000;
-      opacity: 0.9;
-      padding: 5px;
-      border-radius: 5px;
-      border: 1px solid #ccc;
-      background: white;
-      cursor: pointer;
-    }
-  </style>
+  .dragging {
+    opacity: 0.7;
+    position: absolute;
+    z-index: 10000;
+    pointer-events: none;
+  }
+
+  @media (max-width: 900px) {
+    .gallery img { width: 150px; }
+  }
+
+  @media (max-width: 600px) {
+    .gallery img { width: 100%; }
+  }
+</style>
 </head>
 <body>
-  <header>
-    <h1>PappySketch Gallery</h1>
-    <p>Learn • Earn • Return</p>
-  </header>
 
-  <input type="file" id="upload" multiple>
-  <div class="gallery" id="gallery"></div>
+<header>
+  <h1>PappySketch Gallery</h1>
+  <p>Learn • Earn • Return</p>
+</header>
 
-  <!-- Masonry.js CDN -->
-  <script src="https://unpkg.com/masonry-layout@4/dist/masonry.pkgd.min.js"></script>
-  
-  <script>
-    const upload = document.getElementById('upload');
-    const gallery = document.getElementById('gallery');
+<input type="file" id="upload" multiple>
+<div class="gallery" id="gallery"></div>
 
-    // Function to initialize Masonry layout
-    function initMasonry() {
-      new Masonry(gallery, {
-        itemSelector: 'img',
-        columnWidth: 200,
-        gutter: 10
-      });
+<!-- Masonry.js CDN -->
+<script src="https://unpkg.com/masonry-layout@4/dist/masonry.pkgd.min.js"></script>
+
+<script>
+const upload = document.getElementById('upload');
+const gallery = document.getElementById('gallery');
+
+let msnry;
+
+// Initialize Masonry
+function initMasonry() {
+  msnry = new Masonry(gallery, {
+    itemSelector: 'img',
+    columnWidth: 200,
+    gutter: 10,
+    transitionDuration: '0.3s'
+  });
+}
+
+// Drag & drop variables
+let draggedImg = null;
+let offsetX = 0;
+let offsetY = 0;
+
+upload.addEventListener('change', function(e) {
+  Array.from(e.target.files).forEach(file => {
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+      const img = document.createElement('img');
+      img.src = evt.target.result;
+      img.draggable = false;
+      gallery.appendChild(img);
+
+      img.onload = () => {
+        if (!msnry) initMasonry();
+        else msnry.appended(img);
+      }
+
+      img.addEventListener('mousedown', startDrag);
+      img.addEventListener('touchstart', startDrag);
     }
+    reader.readAsDataURL(file);
+  });
+});
 
-    upload.addEventListener('change', function(e) {
-      Array.from(e.target.files).forEach(file => {
-        const reader = new FileReader();
-        reader.onload = function(evt) {
-          const img = document.createElement('img');
-          img.src = evt.target.result;
-          gallery.appendChild(img);
+// Drag functions
+function startDrag(e) {
+  e.preventDefault();
+  draggedImg = e.target;
 
-          // Wait for image to load before applying Masonry
-          img.onload = () => initMasonry();
-        }
-        reader.readAsDataURL(file);
-      });
-    });
-  </script>
+  const rect = draggedImg.getBoundingClientRect();
+  const pageX = e.touches ? e.touches[0].pageX : e.pageX;
+  const pageY = e.touches ? e.touches[0].pageY : e.pageY;
+
+  offsetX = pageX - rect.left;
+  offsetY = pageY - rect.top;
+
+  draggedImg.classList.add('dragging');
+  draggedImg.style.width = rect.width + 'px';
+  draggedImg.style.height = rect.height + 'px';
+
+  window.addEventListener('mousemove', drag);
+  window.addEventListener('mouseup', drop);
+  window.addEventListener('touchmove', drag);
+  window.addEventListener('touchend', drop);
+}
+
+function drag(e) {
+  if (!draggedImg) return;
+  const pageX = e.touches ? e.touches[0].pageX : e.pageX;
+  const pageY = e.touches ? e.touches[0].pageY : e.pageY;
+  draggedImg.style.left = (pageX - offsetX) + 'px';
+  draggedImg.style.top = (pageY - offsetY) + 'px';
+}
+
+function drop() {
+  if (!draggedImg) return;
+
+  draggedImg.classList.remove('dragging');
+  draggedImg.style.position = '';
+  draggedImg.style.left = '';
+  draggedImg.style.top = '';
+
+  // Re-layout Masonry after drop
+  msnry.layout();
+
+  draggedImg = null;
+  window.removeEventListener('mousemove', drag);
+  window.removeEventListener('mouseup', drop);
+  window.removeEventListener('touchmove', drag);
+  window.removeEventListener('touchend', drop);
+}
+</script>
+
 </body>
 </html>
+
