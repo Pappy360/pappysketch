@@ -9,7 +9,7 @@ body {
   margin:0;
   font-family:-apple-system,BlinkMacSystemFont,sans-serif;
   background:#f5f5f7;
-  overflow:hidden;
+  overflow-y: auto; /* allow vertical scrolling */
 }
 header {
   height:60px;
@@ -19,12 +19,15 @@ header {
   background:#fff;
   border-bottom:1px solid #d1d1d6;
   font-weight:600;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
 }
 .controls {
   position:fixed;
   top:70px;
   left:10px;
-  z-index:1000;
+  z-index:1001;
 }
 .controls input {
   padding:8px 12px;
@@ -34,12 +37,11 @@ header {
   cursor:pointer;
 }
 .gallery {
-  position:absolute;
-  top:60px;
+  position: relative; /* allow scrolling */
+  top: 60px;
   left:0;
   right:0;
-  bottom:0;
-  overflow:hidden;
+  min-height:100px;
 }
 .gallery img {
   position:absolute;
@@ -76,12 +78,10 @@ upload.onchange = e => {
     img.src = URL.createObjectURL(file);
 
     img.onload = () => {
-      // Scale images if too wide
       const maxW = 150;
       img.style.width = Math.min(maxW, img.naturalWidth) + 'px';
       img.style.height = img.naturalHeight * (parseInt(img.style.width)/img.naturalWidth) + 'px';
 
-      // Set initial position
       img.style.position = 'absolute';
       img.style.left = '0px';
       img.style.top = '0px';
@@ -92,21 +92,19 @@ upload.onchange = e => {
 
       gallery.appendChild(img);
 
-      // Auto-arrange all images
       const allImages = [...gallery.querySelectorAll('img')];
-      smartArrange(allImages, galleryRect);
+      smartArrange(allImages);
 
-      // Release memory
       URL.revokeObjectURL(img.src);
     };
   });
 
-  // Reset input so same files can be re-uploaded
   upload.value = '';
 };
 
-// Make images draggable
+// Make images draggable (desktop + mobile)
 function makeDraggable(img){
+  // Mouse
   img.onmousedown = e => {
     drag = img;
     offsetX = e.pageX - (parseInt(img.style.left) || 0);
@@ -114,16 +112,33 @@ function makeDraggable(img){
     img.style.transition = 'none';
     img.style.cursor = 'grabbing';
   };
+
+  // Touch
+  img.ontouchstart = e => {
+    e.preventDefault();
+    drag = img;
+    const touch = e.touches[0];
+    offsetX = touch.pageX - (parseInt(img.style.left) || 0);
+    offsetY = touch.pageY - (parseInt(img.style.top) || 0);
+    img.style.transition = 'none';
+  };
 }
 
+// Dragging
 window.onmousemove = e => {
   if(!drag) return;
   drag.style.left = e.pageX - offsetX + 'px';
   drag.style.top = e.pageY - offsetY + 'px';
   pushOthers(drag);
 };
-
-window.onmouseup = () => {
+window.ontouchmove = e => {
+  if(!drag) return;
+  const touch = e.touches[0];
+  drag.style.left = touch.pageX - offsetX + 'px';
+  drag.style.top = touch.pageY - offsetY + 'px';
+  pushOthers(drag);
+};
+window.onmouseup = window.ontouchend = () => {
   if(drag){
     drag.style.transition = 'left 0.2s, top 0.2s';
     drag.style.cursor = 'grab';
@@ -131,8 +146,8 @@ window.onmouseup = () => {
   drag = null;
 };
 
-// Smart initial arrangement
-function smartArrange(images, rect){
+// Smart arrangement
+function smartArrange(images){
   let x = spacing, y = spacing;
   let rowHeight = 0;
 
@@ -140,7 +155,7 @@ function smartArrange(images, rect){
     const w = parseInt(img.style.width);
     const h = parseInt(img.style.height);
 
-    if(x + w + spacing > rect.width){
+    if(x + w + spacing > window.innerWidth){
       x = spacing;
       y += rowHeight + spacing;
       rowHeight = 0;
@@ -152,6 +167,14 @@ function smartArrange(images, rect){
     x += w + spacing;
     rowHeight = Math.max(rowHeight, h);
   });
+
+  // Adjust gallery height to fit all images for scrolling
+  let maxBottom = 0;
+  images.forEach(img => {
+    const bottom = parseInt(img.style.top) + parseInt(img.style.height);
+    if(bottom > maxBottom) maxBottom = bottom;
+  });
+  gallery.style.height = (maxBottom + spacing) + 'px';
 }
 
 // Prevent overlap while dragging
@@ -184,7 +207,6 @@ function pushOthers(dragImg){
   });
 }
 
-// Check overlap
 function isOverlapping(a, b){
   return !(a.right + spacing < b.left ||
            a.left - spacing > b.right ||
@@ -194,9 +216,8 @@ function isOverlapping(a, b){
 
 // Responsive layout
 window.onresize = () => {
-  const galleryRect = gallery.getBoundingClientRect();
   const imgs = [...gallery.querySelectorAll('img')];
-  if(imgs.length) smartArrange(imgs, galleryRect);
+  if(imgs.length) smartArrange(imgs);
 };
 </script>
 </body>
