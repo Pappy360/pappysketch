@@ -31,18 +31,14 @@
     }
 
     .gallery {
-      column-count: 3;       /* Number of columns */
-      column-gap: 10px;      /* Space between columns */
-      padding: 20px;
+      margin: 20px;
     }
 
     .gallery img {
-      width: 100%;
-      display: block;
-      margin-bottom: 10px;   /* Vertical spacing between images */
+      width: 200px;           /* Masonry column width */
+      margin-bottom: 10px;
       border-radius: 8px;
       transition: transform 0.3s, box-shadow 0.3s;
-      break-inside: avoid;   /* Prevent images from breaking between columns */
     }
 
     .gallery img:hover {
@@ -62,18 +58,6 @@
       background: white;
       cursor: pointer;
     }
-
-    @media (max-width: 900px) {
-      .gallery {
-        column-count: 2;
-      }
-    }
-
-    @media (max-width: 600px) {
-      .gallery {
-        column-count: 1;
-      }
-    }
   </style>
 </head>
 <body>
@@ -85,9 +69,21 @@
   <input type="file" id="upload" multiple>
   <div class="gallery" id="gallery"></div>
 
+  <!-- Masonry.js CDN -->
+  <script src="https://unpkg.com/masonry-layout@4/dist/masonry.pkgd.min.js"></script>
+  
   <script>
     const upload = document.getElementById('upload');
     const gallery = document.getElementById('gallery');
+
+    // Function to initialize Masonry layout
+    function initMasonry() {
+      new Masonry(gallery, {
+        itemSelector: 'img',
+        columnWidth: 200,
+        gutter: 10
+      });
+    }
 
     upload.addEventListener('change', function(e) {
       Array.from(e.target.files).forEach(file => {
@@ -96,6 +92,9 @@
           const img = document.createElement('img');
           img.src = evt.target.result;
           gallery.appendChild(img);
+
+          // Wait for image to load before applying Masonry
+          img.onload = () => initMasonry();
         }
         reader.readAsDataURL(file);
       });
