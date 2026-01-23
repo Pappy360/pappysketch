@@ -1,257 +1,240 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PappySketch</title>
 
 <style>
-  body {
-    margin: 0;
-    font-family: Arial, sans-serif;
-    background: #f5f5f5;
-  }
+:root {
+  --bg:#f5f5f7; --panel:#fff; --accent:#007aff; --border:#d1d1d6;
+}
+body {
+  margin:0;
+  font-family:-apple-system,BlinkMacSystemFont,sans-serif;
+  background:var(--bg);
+  overflow:hidden;
+}
+header {
+  height:60px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:var(--panel);
+  border-bottom:1px solid var(--border);
+  font-weight:600;
+}
+.controls {
+  position:fixed;
+  top:70px;
+  left:10px;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  z-index:1000;
+}
+.controls button,input {
+  padding:6px 10px;
+  border-radius:8px;
+  border:1px solid var(--border);
+  background:white;
+}
+.gallery {
+  position:absolute;
+  inset:60px 260px 0 0;
+}
+.gallery img {
+  position:absolute;
+  cursor:grab;
+  touch-action:none;
+}
+.gallery img.selected {
+  outline:2px solid var(--accent);
+}
+.editor {
+  position:fixed;
+  top:60px;
+  right:0;
+  width:250px;
+  height:calc(100vh - 60px);
+  background:var(--panel);
+  border-left:1px solid var(--border);
+  padding:12px;
+  overflow:auto;
+}
+.editor h3 { font-size:14px; margin:10px 0; }
+.editor label { font-size:12px; display:block; margin-bottom:8px; }
+.editor input[type=range] { width:100%; }
+.editor button {
+  width:100%;
+  padding:8px;
+  border-radius:8px;
+  border:none;
+  margin-top:6px;
+}
+.primary { background:var(--accent); color:white; }
+.danger { background:#ff3b30; color:white; }
 
-  header {
-    text-align: center;
-    padding: 20px;
-    background: #4CAF50;
-    color: white;
-  }
-
-  #upload, #saveLayout, #loadLayout {
-    position: fixed;
-    left: 10px;
-    z-index: 1000;
-    padding: 6px 10px;
-    background: white;
-    border: 1px solid #ccc;
-    cursor: pointer;
-  }
-
-  #upload { top: 10px; }
-  #saveLayout { top: 50px; }
-  #loadLayout { top: 90px; }
-
-  .gallery {
-    position: relative;
-    width: 100vw;
-    height: calc(100vh - 80px);
-    overflow: hidden;
-  }
-
-  .gallery img {
-    position: absolute;
-    cursor: grab;
-    user-select: none;
-  }
-
-  .dragging {
-    opacity: 0.7;
-    pointer-events: none;
-    z-index: 2000;
-  }
-
-  /* Editor panel */
-  #editor {
-    position: fixed;
-    right: 10px;
-    top: 80px;
-    width: 220px;
-    background: rgba(255,255,255,0.95);
-    border: 1px solid #ccc;
-    padding: 10px;
-    z-index: 1500;
-    font-size: 12px;
-  }
-
-  #editor label {
-    display: block;
-    margin-bottom: 10px;
-  }
-
-  #editor input {
-    width: 100%;
-  }
+.crop-box {
+  position:absolute;
+  border:2px dashed var(--accent);
+  pointer-events:none;
+}
 </style>
 </head>
 
 <body>
+<header>PappySketch</header>
 
-<header>
-  <h1>PappySketch Gallery</h1>
-  <p>Learn • Earn • Return</p>
-</header>
-
-<input type="file" id="upload" multiple />
-<button id="saveLayout">Save Layout</button>
-<button id="loadLayout">Load Layout</button>
+<div class="controls">
+  <input type="file" id="upload" multiple>
+  <button id="save">Save</button>
+  <button id="load">Load</button>
+  <button id="export">Export PNG</button>
+</div>
 
 <div class="gallery" id="gallery"></div>
 
-<div id="editor">
-  <h3>Edit Photo</h3>
+<div class="editor">
+  <h3>Adjust</h3>
+  <label>Brightness <input type="range" id="b" min="50" max="150" value="100"></label>
+  <label>Contrast <input type="range" id="c" min="50" max="150" value="100"></label>
+  <label>Saturation <input type="range" id="s" min="0" max="200" value="100"></label>
+  <label>Warmth <input type="range" id="w" min="-50" max="50" value="0"></label>
+  <label>Straighten <input type="range" id="r" min="-45" max="45" value="0"></label>
 
-  <label>Brightness
-    <input type="range" id="bright" min="0" max="200" value="100">
-  </label>
+  <h3>Crop</h3>
+  <button class="primary" onclick="startCrop()">Start Crop</button>
+  <button onclick="applyCrop()">Apply Crop</button>
 
-  <label>Contrast
-    <input type="range" id="contrast" min="0" max="200" value="100">
-  </label>
-
-  <label>Saturation
-    <input type="range" id="saturate" min="0" max="200" value="100">
-  </label>
-
-  <label>Rotate
-    <input type="range" id="rotate" min="-180" max="180" value="0">
-  </label>
-
-  <button id="resetEdit">Reset</button>
+  <button onclick="resetEdits()">Reset</button>
+  <button class="danger" onclick="deleteImg()">Delete Image</button>
 </div>
 
 <script>
 const gallery = document.getElementById('gallery');
-const upload = document.getElementById('upload');
+let selected=null, drag=null, dx=0, dy=0;
+let cropBox=null, cropStart=null;
 
-let dragged = null;
-let offsetX = 0;
-let offsetY = 0;
-let selectedImg = null;
-
-// Upload images
-upload.addEventListener('change', e => {
-  Array.from(e.target.files).forEach(file => {
-    const reader = new FileReader();
-    reader.onload = evt => {
-      const img = document.createElement('img');
-      img.src = evt.target.result;
-      img.style.left = '100px';
-      img.style.top = '100px';
-      img.style.width = '200px';
-      makeInteractive(img);
-      gallery.appendChild(img);
-    };
-    reader.readAsDataURL(file);
-  });
-});
-
-// Make image interactive
-function makeInteractive(img) {
-  img.addEventListener('mousedown', startDrag);
-  img.addEventListener('click', () => {
-    selectedImg = img;
-    loadSliders();
-  });
-}
-
-// Drag logic
-function startDrag(e) {
-  dragged = e.target;
-  dragged.classList.add('dragging');
-  offsetX = e.offsetX;
-  offsetY = e.offsetY;
-
-  window.addEventListener('mousemove', drag);
-  window.addEventListener('mouseup', drop);
-}
-
-function drag(e) {
-  if (!dragged) return;
-  dragged.style.left = (e.pageX - offsetX) + 'px';
-  dragged.style.top = (e.pageY - offsetY) + 'px';
-}
-
-function drop() {
-  if (!dragged) return;
-  dragged.classList.remove('dragging');
-  dragged = null;
-
-  window.removeEventListener('mousemove', drag);
-  window.removeEventListener('mouseup', drop);
-}
-
-// Editor controls
-const bright = document.getElementById('bright');
-const contrast = document.getElementById('contrast');
-const saturate = document.getElementById('saturate');
-const rotate = document.getElementById('rotate');
-
-[bright, contrast, saturate, rotate].forEach(slider => {
-  slider.addEventListener('input', applyFilters);
-});
-
-function applyFilters() {
-  if (!selectedImg) return;
-
-  selectedImg.style.filter =
-    `brightness(${bright.value}%) contrast(${contrast.value}%) saturate(${saturate.value}%)`;
-  selectedImg.style.transform = `rotate(${rotate.value}deg)`;
-
-  selectedImg.dataset.bright = bright.value;
-  selectedImg.dataset.contrast = contrast.value;
-  selectedImg.dataset.saturate = saturate.value;
-  selectedImg.dataset.rotate = rotate.value;
-}
-
-function loadSliders() {
-  bright.value = selectedImg.dataset.bright || 100;
-  contrast.value = selectedImg.dataset.contrast || 100;
-  saturate.value = selectedImg.dataset.saturate || 100;
-  rotate.value = selectedImg.dataset.rotate || 0;
-  applyFilters();
-}
-
-document.getElementById('resetEdit').onclick = () => {
-  if (!selectedImg) return;
-  bright.value = contrast.value = saturate.value = 100;
-  rotate.value = 0;
-  applyFilters();
-};
-
-// Save layout
-document.getElementById('saveLayout').onclick = () => {
-  const data = [];
-  document.querySelectorAll('.gallery img').forEach(img => {
-    data.push({
-      src: img.src,
-      x: img.style.left,
-      y: img.style.top,
-      w: img.style.width,
-      b: img.dataset.bright || 100,
-      c: img.dataset.contrast || 100,
-      s: img.dataset.saturate || 100,
-      r: img.dataset.rotate || 0
-    });
-  });
-  localStorage.setItem('pappysketch-layout', JSON.stringify(data));
-  alert('Layout saved ✨');
-};
-
-// Load layout
-document.getElementById('loadLayout').onclick = () => {
-  const saved = localStorage.getItem('pappysketch-layout');
-  if (!saved) return alert('No saved layout');
-
-  gallery.innerHTML = '';
-  JSON.parse(saved).forEach(item => {
-    const img = document.createElement('img');
-    img.src = item.src;
-    img.style.left = item.x;
-    img.style.top = item.y;
-    img.style.width = item.w;
-    img.dataset.bright = item.b;
-    img.dataset.contrast = item.c;
-    img.dataset.saturate = item.s;
-    img.dataset.rotate = item.r;
+upload.onchange=e=>{
+  [...e.target.files].forEach(f=>{
+    const img=new Image();
+    img.src=URL.createObjectURL(f);
+    img.style.left='100px';
+    img.style.top='100px';
+    img.style.width='220px';
+    img.dataset.b=100; img.dataset.c=100; img.dataset.s=100; img.dataset.w=0; img.dataset.r=0;
     makeInteractive(img);
     gallery.appendChild(img);
-    selectedImg = img;
-    loadSliders();
   });
 };
-</script>
 
+function makeInteractive(img){
+  img.onmousedown=e=>{
+    select(img);
+    drag=img; dx=e.offsetX; dy=e.offsetY;
+  };
+}
+
+window.onmousemove=e=>{
+  if(drag){
+    drag.style.left=e.pageX-dx+'px';
+    drag.style.top=e.pageY-dy+'px';
+  }
+  if(cropBox && cropStart){
+    cropBox.style.width=Math.abs(e.pageX-cropStart.x)+'px';
+    cropBox.style.height=Math.abs(e.pageY-cropStart.y)+'px';
+    cropBox.style.left=Math.min(e.pageX,cropStart.x)+'px';
+    cropBox.style.top=Math.min(e.pageY,cropStart.y)+'px';
+  }
+};
+
+window.onmouseup=()=>{ drag=null; cropStart=null; };
+
+function select(img){
+  document.querySelectorAll('.gallery img').forEach(i=>i.classList.remove('selected'));
+  selected=img; img.classList.add('selected');
+  loadSliders();
+}
+
+function applyEdits(){
+  if(!selected)return;
+  selected.style.filter=
+    `brightness(${b.value}%) contrast(${c.value}%) saturate(${s.value}%) sepia(${w.value>0?w.value/100:0})`;
+  selected.style.transform=`rotate(${r.value}deg)`;
+  Object.assign(selected.dataset,{b:b.value,c:c.value,s:s.value,w:w.value,r:r.value});
+}
+[b,c,s,w,r].forEach(x=>x.oninput=applyEdits);
+
+function loadSliders(){
+  b.value=selected.dataset.b||100;
+  c.value=selected.dataset.c||100;
+  s.value=selected.dataset.s||100;
+  w.value=selected.dataset.w||0;
+  r.value=selected.dataset.r||0;
+  applyEdits();
+}
+
+function resetEdits(){
+  if(!selected)return;
+  selected.style.filter='';
+  selected.style.transform='';
+}
+
+function deleteImg(){
+  if(!selected)return;
+  selected.remove(); selected=null;
+}
+
+function startCrop(){
+  if(!selected)return;
+  cropBox=document.createElement('div');
+  cropBox.className='crop-box';
+  document.body.appendChild(cropBox);
+  window.onmousedown=e=>{
+    cropStart={x:e.pageX,y:e.pageY};
+    cropBox.style.left=e.pageX+'px';
+    cropBox.style.top=e.pageY+'px';
+  };
+}
+
+function applyCrop(){
+  if(!cropBox||!selected)return;
+  const r=cropBox.getBoundingClientRect();
+  selected.style.clipPath=`inset(${r.top-selected.offsetTop}px ${selected.offsetLeft+selected.width-r.right}px ${selected.offsetTop+selected.height-r.bottom}px ${r.left-selected.offsetLeft}px)`;
+  cropBox.remove(); cropBox=null;
+}
+
+save.onclick=()=>{
+  const data=[...gallery.children].map(i=>({src:i.src,style:i.style.cssText,dataset:i.dataset}));
+  localStorage.setItem('pappysketch',JSON.stringify(data));
+  alert('Saved ✨');
+};
+
+load.onclick=()=>{
+  gallery.innerHTML='';
+  JSON.parse(localStorage.getItem('pappysketch')||[]).forEach(d=>{
+    const img=new Image();
+    img.src=d.src; img.style.cssText=d.style;
+    img.dataset=d.dataset;
+    makeInteractive(img);
+    gallery.appendChild(img);
+  });
+};
+
+export.onclick=()=>{
+  const c=document.createElement('canvas');
+  const ctx=c.getContext('2d');
+  c.width=gallery.clientWidth;
+  c.height=gallery.clientHeight;
+  [...gallery.children].forEach(img=>{
+    ctx.drawImage(img,parseInt(img.style.left),parseInt(img.style.top),img.width,img.height);
+  });
+  const a=document.createElement('a');
+  a.href=c.toDataURL('image/png');
+  a.download='pappysketch.png';
+  a.click();
+};
+</script>
 </body>
 </html>
