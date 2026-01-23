@@ -1,11 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PappySketch Grid</title>
-
 <style>
 :root {
   --bg:#f5f5f7; --panel:#fff; --accent:#007aff; --border:#d1d1d6;
@@ -49,7 +47,7 @@ header {
   background-image:
     linear-gradient(to right, #ccc 1px, transparent 1px),
     linear-gradient(to bottom, #ccc 1px, transparent 1px);
-  background-size: 50px 50px; /* GRID_SIZE */
+  background-size: 50px 50px;
   overflow:hidden;
 }
 .gallery img {
@@ -62,7 +60,7 @@ header {
   outline:2px solid var(--accent);
 }
 .editor {
-  display:none; /* hidden by default */
+  display:none;
   position:fixed;
   top:60px;
   right:0;
@@ -75,25 +73,12 @@ header {
   transform: translateX(100%);
   transition: transform 0.3s ease;
 }
-.editor.show {
-  display:block;
-  transform: translateX(0);
-}
+.editor.show { display:block; transform: translateX(0); }
 .editor h3 { font-size:14px; margin:10px 0; }
 .editor label { font-size:12px; display:block; margin-bottom:8px; }
 .editor input[type=range] { width:100%; }
-.editor button {
-  width:100%;
-  padding:8px;
-  border-radius:8px;
-  border:none;
-  margin-top:6px;
-  cursor:pointer;
-}
-.editor input:disabled, .editor button:disabled {
-  opacity:0.5;
-  cursor:not-allowed;
-}
+.editor button { width:100%; padding:8px; border-radius:8px; border:none; margin-top:6px; cursor:pointer; }
+.editor input:disabled, .editor button:disabled { opacity:0.5; cursor:not-allowed; }
 .primary { background:var(--accent); color:white; }
 .danger { background:#ff3b30; color:white; }
 .crop-box {
@@ -102,9 +87,15 @@ header {
   pointer-events:none;
   z-index:9999;
 }
+.resize-handle {
+  position:absolute;
+  width:10px;
+  height:10px;
+  background:var(--accent);
+  z-index:1000;
+}
 </style>
 </head>
-
 <body>
 <header>PappySketch Grid</header>
 
@@ -135,7 +126,6 @@ header {
 
 <script>
 const GRID_SIZE = 50;
-
 const gallery = document.getElementById('gallery');
 const upload = document.getElementById('upload');
 const save = document.getElementById('save');
@@ -152,17 +142,16 @@ const editor = document.querySelector('.editor');
 const editorControls = document.querySelectorAll('.editor input, .editor button');
 
 let selected = null;
-let drag = null;
-let dx = 0, dy = 0;
+let drag = null, dx = 0, dy = 0;
+let cropBox = null, cropStart = null;
 
-let cropBox = null;
-let cropStart = null;
-
-function updateEditorState() {
+// --- Editor state ---
+function updateEditorState(){
   editorControls.forEach(el => el.disabled = !selected);
   if(!selected) editor.classList.remove('show');
 }
 
+// --- Upload images ---
 upload.onchange = e => {
   [...e.target.files].forEach(f => {
     const img = new Image();
@@ -170,171 +159,195 @@ upload.onchange = e => {
     img.style.left = '100px';
     img.style.top = '100px';
     img.style.width = '220px';
-    img.dataset.b = 100; img.dataset.c = 100; img.dataset.s = 100; img.dataset.w = 0; img.dataset.r = 0;
-
+    img.dataset.b=100; img.dataset.c=100; img.dataset.s=100; img.dataset.w=0; img.dataset.r=0;
     img.onload = () => {
-      img.style.height = img.naturalHeight * (220 / img.naturalWidth) + 'px';
+      img.style.height = img.naturalHeight*(220/img.naturalWidth)+'px';
       makeInteractive(img);
       gallery.appendChild(img);
     };
   });
 };
 
+// --- Click to select / deselect ---
+function select(img){
+  if(selected===img){
+    img.classList.remove('selected');
+    selected=null;
+    editor.classList.remove('show');
+    updateEditorState();
+    removeResizeHandles(img);
+    return;
+  }
+  document.querySelectorAll('.gallery img').forEach(i=>{
+    i.classList.remove('selected');
+    removeResizeHandles(i);
+  });
+  selected=img;
+  img.classList.add('selected');
+  editor.classList.add('show');
+  updateEditorState();
+  loadSliders();
+  addResizeHandles(img);
+}
+
+// --- Drag & resize ---
 function makeInteractive(img){
   img.onmousedown = e => {
-    select(img);
+    if(!img.classList.contains('selected')) select(img);
     drag = img;
     dx = e.pageX - parseInt(img.style.left);
     dy = e.pageY - parseInt(img.style.top);
   };
 }
 
-window.onmousemove = e => {
+function addResizeHandles(img){
+  const corners=['nw','ne','sw','se'];
+  corners.forEach(c=>{
+    const handle = document.createElement('div');
+    handle.className='resize-handle '+c;
+    gallery.appendChild(handle);
+    positionHandle(handle,img,c);
+    handle.onmousedown = e=>{
+      e.stopPropagation();
+      drag={img, corner:c};
+      dx=e.pageX; dy=e.pageY;
+    };
+  });
+}
+
+function removeResizeHandles(img){
+  document.querySelectorAll('.resize-handle').forEach(h=>h.remove());
+}
+
+function positionHandle(handle,img,corner){
+  const l=parseInt(img.style.left), t=parseInt(img.style.top);
+  const w=img.width, h=img.height;
+  switch(corner){
+    case'nw': handle.style.left=l-5+'px'; handle.style.top=t-5+'px'; break;
+    case'ne': handle.style.left=l+w-5+'px'; handle.style.top=t-5+'px'; break;
+    case'sw': handle.style.left=l-5+'px'; handle.style.top=t+h-5+'px'; break;
+    case'se': handle.style.left=l+w-5+'px'; handle.style.top=t+h-5+'px'; break;
+  }
+}
+
+function positionResizeHandles(img){
+  document.querySelectorAll('.resize-handle').forEach(h=>{
+    positionHandle(h,img,h.classList[1]);
+  });
+}
+
+window.onmousemove=e=>{
   if(drag){
-    drag.style.left = e.pageX - dx + 'px';
-    drag.style.top = e.pageY - dy + 'px';
-  }
-  if(cropBox && cropStart){
-    cropBox.style.width = Math.abs(e.pageX - cropStart.x) + 'px';
-    cropBox.style.height = Math.abs(e.pageY - cropStart.y) + 'px';
-    cropBox.style.left = Math.min(e.pageX, cropStart.x) + 'px';
-    cropBox.style.top = Math.min(e.pageY, cropStart.y) + 'px';
+    if(drag.img && drag.corner){
+      const img=drag.img;
+      let dxm=e.pageX-dx, dym=e.pageY-dy;
+      let l=parseInt(img.style.left), t=parseInt(img.style.top), w=img.width, h=img.height;
+      switch(drag.corner){
+        case'nw':
+          img.style.width=(w-dxm)+'px'; img.style.height=(h-dym)+'px';
+          img.style.left=(l+dxm)+'px'; img.style.top=(t+dym)+'px'; break;
+        case'ne':
+          img.style.width=(w+dxm)+'px'; img.style.height=(h-dym)+'px'; img.style.top=(t+dym)+'px'; break;
+        case'sw':
+          img.style.width=(w-dxm)+'px'; img.style.height=(h+dym)+'px'; img.style.left=(l+dxm)+'px'; break;
+        case'se':
+          img.style.width=(w+dxm)+'px'; img.style.height=(h+dym)+'px'; break;
+      }
+      dx=e.pageX; dy=e.pageY;
+      positionResizeHandles(img);
+    } else {
+      drag.style.left=e.pageX-dx+'px';
+      drag.style.top=e.pageY-dy+'px';
+    }
   }
 };
 
+window.onmouseup=()=>{ drag=null; cropStart=null; };
+
+// --- Snap to grid ---
 function snapToGrid(img){
-  const left = parseInt(img.style.left);
-  const top = parseInt(img.style.top);
-  img.style.left = Math.round(left / GRID_SIZE) * GRID_SIZE + 'px';
-  img.style.top = Math.round(top / GRID_SIZE) * GRID_SIZE + 'px';
+  const left=parseInt(img.style.left), top=parseInt(img.style.top);
+  img.style.left=Math.round(left/GRID_SIZE)*GRID_SIZE+'px';
+  img.style.top=Math.round(top/GRID_SIZE)*GRID_SIZE+'px';
 }
 
-window.onmouseup = () => {
-  if(drag) snapToGrid(drag);
-  drag = null;
-  cropStart = null;
-};
-
-function select(img){
-  document.querySelectorAll('.gallery img').forEach(i => i.classList.remove('selected'));
-  selected = img;
-  img.classList.add('selected');
-  loadSliders();
-  updateEditorState();
-  editor.classList.add('show'); // show editor
-}
-
+// --- Filters / Sliders ---
+[b,c,s,w,r].forEach(x=>x.oninput=applyEdits);
 function applyEdits(){
   if(!selected) return;
-  selected.style.filter =
-    `brightness(${b.value}%) contrast(${c.value}%) saturate(${s.value}%) sepia(${w.value>0?w.value/100:0})`;
-  selected.style.transform = `rotate(${r.value}deg)`;
-  Object.assign(selected.dataset, {b:b.value, c:c.value, s:s.value, w:w.value, r:r.value});
+  selected.style.filter=`brightness(${b.value}%) contrast(${c.value}%) saturate(${s.value}%) sepia(${w.value>0?w.value/100:0})`;
+  selected.style.transform=`rotate(${r.value}deg)`;
+  Object.assign(selected.dataset,{b:b.value,c:c.value,s:s.value,w:w.value,r:r.value});
 }
-
-[b,c,s,w,r].forEach(x => x.oninput = applyEdits);
-
 function loadSliders(){
   if(!selected) return;
-  b.value = selected.dataset.b || 100;
-  c.value = selected.dataset.c || 100;
-  s.value = selected.dataset.s || 100;
-  w.value = selected.dataset.w || 0;
-  r.value = selected.dataset.r || 0;
+  b.value=selected.dataset.b||100;
+  c.value=selected.dataset.c||100;
+  s.value=selected.dataset.s||100;
+  w.value=selected.dataset.w||0;
+  r.value=selected.dataset.r||0;
   applyEdits();
 }
+function resetEdits(){if(!selected)return; selected.style.filter=''; selected.style.transform=''; Object.assign(selected.dataset,{b:100,c:100,s:100,w:0,r:0});}
+function deleteImg(){if(!selected)return; selected.remove(); selected=null; updateEditorState();}
 
-function resetEdits(){
-  if(!selected) return;
-  selected.style.filter = '';
-  selected.style.transform = '';
-  Object.assign(selected.dataset, {b:100, c:100, s:100, w:0, r:0});
-}
-
-function deleteImg(){
-  if(!selected) return;
-  selected.remove();
-  selected = null;
-  updateEditorState();
-}
-
+// --- Crop ---
 function startCrop(){
   if(!selected) return;
-  cropBox = document.createElement('div');
-  cropBox.className = 'crop-box';
-  document.body.appendChild(cropBox);
-  cropStart = null;
-
-  window.onmousedown = e => {
+  cropBox=document.createElement('div'); cropBox.className='crop-box'; document.body.appendChild(cropBox);
+  cropStart=null;
+  window.onmousedown=e=>{
     if(!selected) return;
-    cropStart = {x:e.pageX, y:e.pageY};
-    cropBox.style.left = e.pageX + 'px';
-    cropBox.style.top = e.pageY + 'px';
+    cropStart={x:e.pageX,y:e.pageY};
+    cropBox.style.left=e.pageX+'px'; cropBox.style.top=e.pageY+'px';
   };
 }
-
 function applyCrop(){
-  if(!cropBox || !selected) return;
-  const r = cropBox.getBoundingClientRect();
-  const imgRect = selected.getBoundingClientRect();
-  const top = r.top - imgRect.top;
-  const left = r.left - imgRect.left;
-  const bottom = imgRect.bottom - r.bottom;
-  const right = imgRect.right - r.right;
-  selected.style.clipPath = `inset(${top}px ${right}px ${bottom}px ${left}px)`;
-  cropBox.remove();
-  cropBox = null;
+  if(!cropBox||!selected) return;
+  const r=cropBox.getBoundingClientRect();
+  const imgRect=selected.getBoundingClientRect();
+  const top=r.top-imgRect.top, left=r.left-imgRect.left;
+  const bottom=imgRect.bottom-r.bottom, right=imgRect.right-r.right;
+  selected.style.clipPath=`inset(${top}px ${right}px ${bottom}px ${left}px)`;
+  cropBox.remove(); cropBox=null;
 }
 
-save.onclick = () => {
-  const data = [...gallery.children].map(i => ({
-    src: i.src,
-    style: i.style.cssText,
-    dataset: i.dataset
+// --- Save / Load / Export ---
+save.onclick=()=>{
+  const data=[...gallery.children].filter(i=>i.tagName==='IMG').map(i=>({
+    src:i.src, style:i.style.cssText, dataset:i.dataset
   }));
-  localStorage.setItem('pappysketch', JSON.stringify(data));
+  localStorage.setItem('pappysketch',JSON.stringify(data));
   alert('Saved ✨');
 };
 
-load.onclick = () => {
-  gallery.innerHTML = '';
-  JSON.parse(localStorage.getItem('pappysketch') || '[]').forEach(d => {
-    const img = new Image();
-    img.src = d.src;
-    img.style.cssText = d.style;
-    img.dataset = d.dataset;
-    img.onload = () => {
-      makeInteractive(img);
-      gallery.appendChild(img);
-    };
+load.onclick=()=>{
+  gallery.innerHTML='';
+  JSON.parse(localStorage.getItem('pappysketch')||'[]').forEach(d=>{
+    const img=new Image(); img.src=d.src; img.style.cssText=d.style; img.dataset=d.dataset;
+    img.onload=()=>{ makeInteractive(img); gallery.appendChild(img); };
   });
 };
 
-exportBtn.onclick = () => {
-  const c = document.createElement('canvas');
-  const ctx = c.getContext('2d');
-  c.width = gallery.clientWidth;
-  c.height = gallery.clientHeight;
-  [...gallery.children].forEach(img => {
-    const x = parseInt(img.style.left);
-    const y = parseInt(img.style.top);
-    const w = img.width;
-    const h = img.height;
-    ctx.save();
-    ctx.translate(x + w/2, y + h/2);
-    ctx.rotate((parseFloat(img.dataset.r)||0) * Math.PI/180);
-    ctx.filter =
-      `brightness(${img.dataset.b}%) contrast(${img.dataset.c}%) saturate(${img.dataset.s}%) sepia(${img.dataset.w>0?img.dataset.w/100:0})`;
-    ctx.drawImage(img, -w/2, -h/2, w, h);
+exportBtn.onclick=()=>{
+  const c=document.createElement('canvas'); const ctx=c.getContext('2d');
+  c.width=gallery.clientWidth; c.height=gallery.clientHeight;
+  [...gallery.children].filter(i=>i.tagName==='IMG').forEach(img=>{
+    const x=parseInt(img.style.left), y=parseInt(img.style.top);
+    const w=img.width, h=img.height;
+    ctx.save(); ctx.translate(x+w/2,y+h/2);
+    ctx.rotate((parseFloat(img.dataset.r)||0)*Math.PI/180);
+    ctx.filter=`brightness(${img.dataset.b}%) contrast(${img.dataset.c}%) saturate(${img.dataset.s}%) sepia(${img.dataset.w>0?img.dataset.w/100:0})`;
+    if(img.style.clipPath){
+      const clip=img.style.clipPath.match(/inset\(([^)]+)\)/)[1].split(' ').map(v=>parseFloat(v));
+      ctx.drawImage(img,clip[3],clip[0],w-clip[1]-clip[3],h-clip[0]-clip[2],-w/2,-h/2,w-clip[1]-clip[3],h-clip[0]-clip[2]);
+    } else ctx.drawImage(img,-w/2,-h/2,w,h);
     ctx.restore();
   });
-  const a = document.createElement('a');
-  a.href = c.toDataURL('image/png');
-  a.download = 'pappysketch.png';
-  a.click();
+  const a=document.createElement('a'); a.href=c.toDataURL('image/png'); a.download='pappysketch.png'; a.click();
 };
 
-// Disable editor initially
+// --- Init ---
 updateEditorState();
 </script>
 </body>
