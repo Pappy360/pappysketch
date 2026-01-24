@@ -151,8 +151,6 @@ header {
 const gallery = document.getElementById('gallery');
 const upload = document.getElementById('upload');
 const exportBtn = document.getElementById('exportBtn');
-const lightbox = document.getElementById('lightbox');
-const lightboxImg = document.getElementById('lightbox-img');
 const trash = document.getElementById('trash');
 const undoBtn = document.getElementById('undoBtn');
 const boardSelect = document.getElementById('boardSelect');
@@ -163,7 +161,7 @@ const editBtn = document.getElementById('editBtn');
 const deleteBtn = document.getElementById('deleteBtn');
 
 let spacing = 0, columns = 3;
-let drag = null, offsetX=0, offsetY=0, pressTimer=null, HOLD_DELAY=180;
+let drag = null, offsetX=0, offsetY=0;
 let images = [], undoStack = [];
 let boards = JSON.parse(localStorage.getItem('pappysketch-boards') || '["Main"]');
 let currentBoard = localStorage.getItem('pappysketch-current') || boards[0];
@@ -228,61 +226,63 @@ function loadLayout(){
     gallery.appendChild(item);
     images.push(item);
     makeDraggable(item);
-    enableTapMenu(item);
   });
   if(images.length) smartArrange(images);
 }
 
-// -------------------- Draggable --------------------
+// -------------------- Draggable + Tap Menu --------------------
 function makeDraggable(item){
-  const img=item.querySelector('img');
-  const startDrag=(x,y)=>{
-    drag=item;
-    offsetX=x-(parseInt(item.style.left)||0);
-    offsetY=y-(parseInt(item.style.top)||0);
-    item.style.cursor='grabbing';
-    trash.style.display='flex';
-  };
-  img.onmousedown=e=>{ pressTimer=setTimeout(()=>startDrag(e.pageX,e.pageY),HOLD_DELAY);};
-  img.onmouseup=img.onmouseleave=()=>clearTimeout(pressTimer);
-  img.ontouchstart=e=>{ const t=e.touches[0]; pressTimer=setTimeout(()=>startDrag(t.pageX,t.pageY),HOLD_DELAY);};
-  img.ontouchend=()=>clearTimeout(pressTimer);
-}
-window.onmousemove=window.ontouchmove=e=>{
-  if(!drag) return;
-  let x=e.pageX||e.touches[0].pageX;
-  let y=e.pageY||e.touches[0].pageY;
-  drag.style.left=x-offsetX+'px';
-  drag.style.top=y-offsetY+'px';
-  pushOthers(drag);
-  const t=trash.getBoundingClientRect();
-  const d=drag.getBoundingClientRect();
-  trash.classList.toggle('active',!(d.right<t.left||d.left>t.right||d.bottom<t.top||d.top>t.bottom));
-};
-window.onmouseup=window.ontouchend=()=>{
-  if(!drag) return;
-  const t=trash.getBoundingClientRect();
-  const d=drag.getBoundingClientRect();
-  const droppedInTrash=!(d.right<t.left||d.left>t.right||d.bottom<t.top||d.top>t.bottom);
-  trash.style.display='none';
-  trash.classList.remove('active');
-  if(droppedInTrash){
-    const img = drag.querySelector('img');
-    undoStack.push({src:img.src});
-    undoBtn.style.display='block';
-    drag.remove();
-    images=images.filter(i=>i!==drag);
-  } else { snapToColumns(drag);}
-  drag=null;
-  smartArrange(images);
-  saveLayout();
-};
-
-// -------------------- Tap Menu --------------------
-function enableTapMenu(item){
   const img = item.querySelector('img');
+  let isDragging = false;
+  let startX, startY;
+
+  // --- Dragging ---
+  img.addEventListener('mousedown', e => {
+    e.preventDefault();
+    isDragging = true;
+    startX = e.pageX - (parseInt(item.style.left)||0);
+    startY = e.pageY - (parseInt(item.style.top)||0);
+    item.style.cursor = 'grabbing';
+    trash.style.display = 'flex';
+  });
+  img.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    isDragging = true;
+    startX = t.pageX - (parseInt(item.style.left)||0);
+    startY = t.pageY - (parseInt(item.style.top)||0);
+    trash.style.display = 'flex';
+  }, {passive: false});
+
+  window.addEventListener('mousemove', e=>{
+    if(!isDragging) return;
+    item.style.left = e.pageX - startX + 'px';
+    item.style.top = e.pageY - startY + 'px';
+    pushOthers(item);
+  });
+  window.addEventListener('touchmove', e=>{
+    if(!isDragging) return;
+    const t = e.touches[0];
+    item.style.left = t.pageX - startX + 'px';
+    item.style.top = t.pageY - startY + 'px';
+    pushOthers(item);
+  }, {passive: false});
+
+  function stopDrag(){
+    if(!isDragging) return;
+    trash.style.display = 'none';
+    snapToColumns(item);
+    item.style.cursor = 'grab';
+    smartArrange(images);
+    saveLayout();
+    isDragging = false;
+  }
+  window.addEventListener('mouseup', stopDrag);
+  window.addEventListener('touchend', stopDrag);
+
+  // --- Tap Menu ---
   img.addEventListener('click', e=>{
-    if(drag) return;
+    if(isDragging) return; // ignore click if dragging
+    e.stopPropagation();
     selectedItem = item;
     imgMenu.style.display = 'block';
     imgMenu.style.left = e.pageX + 'px';
@@ -290,13 +290,12 @@ function enableTapMenu(item){
   });
 }
 
-// Hide menu on click elsewhere
+// -------------------- Tap Menu Actions --------------------
 window.addEventListener('click', ()=>{
   imgMenu.style.display='none';
   selectedItem=null;
 });
 
-// DELETE
 deleteBtn.onclick = ()=>{
   if(selectedItem){
     const img = selectedItem.querySelector('img');
@@ -310,7 +309,6 @@ deleteBtn.onclick = ()=>{
   }
 };
 
-// EDIT (placeholder)
 editBtn.onclick = ()=>{
   if(selectedItem){
     alert('Edit feature not implemented yet!');
@@ -331,7 +329,6 @@ undoBtn.onclick=()=>{
   gallery.appendChild(item);
   images.push(item);
   makeDraggable(item);
-  enableTapMenu(item);
   smartArrange(images);
   saveLayout();
   if(!undoStack.length) undoBtn.style.display='none';
@@ -350,37 +347,11 @@ upload.onchange=e=>{
       gallery.appendChild(item);
       images.push(item);
       makeDraggable(item);
-      enableTapMenu(item);
       smartArrange(images);
       saveLayout();
     };
   });
   upload.value='';
-};
-
-// -------------------- Export --------------------
-exportBtn.onclick=()=>{
-  if(!images.length) return;
-  let maxRight=0,maxBottom=0;
-  images.forEach(item=>{
-    const img=item.querySelector('img');
-    maxRight=Math.max(maxRight,item.offsetLeft+img.offsetWidth);
-    maxBottom=Math.max(maxBottom,item.offsetTop+img.offsetHeight);
-  });
-  const canvas=document.createElement('canvas');
-  canvas.width=maxRight;
-  canvas.height=maxBottom;
-  const ctx=canvas.getContext('2d');
-  ctx.fillStyle='#ffffff';
-  ctx.fillRect(0,0,canvas.width,canvas.height);
-  images.forEach(item=>{
-    const img=item.querySelector('img');
-    ctx.drawImage(img,item.offsetLeft,item.offsetTop,img.offsetWidth,img.offsetHeight);
-  });
-  const link=document.createElement('a');
-  link.download=`${currentBoard}.png`;
-  link.href=canvas.toDataURL('image/png');
-  link.click();
 };
 
 // -------------------- Boards --------------------
