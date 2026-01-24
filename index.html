@@ -9,7 +9,7 @@ body {
   margin:0;
   font-family:-apple-system,BlinkMacSystemFont,sans-serif;
   background:#f5f5f7;
-  overflow-y: auto; /* allow vertical scrolling */
+  overflow-y: auto;
 }
 header {
   height:60px;
@@ -29,7 +29,9 @@ header {
   left:10px;
   z-index:1001;
 }
-.controls input {
+.controls input, .controls button, .controls select {
+  display:block;
+  margin-bottom:6px;
   padding:8px 12px;
   border-radius:8px;
   border:1px solid #d1d1d6;
@@ -37,18 +39,73 @@ header {
   cursor:pointer;
 }
 .gallery {
-  position: relative; /* allow scrolling */
+  position: relative;
   top: 60px;
   left:0;
   right:0;
   min-height:100px;
 }
-.gallery img {
-  position:absolute;
-  cursor:grab;
-  touch-action:none;
-  user-select:none;
-  transition: left 0.2s, top 0.2s;
+.item {
+  position: absolute;
+  text-align:center;
+  font-size:12px;
+  color:#555;
+}
+.item img {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  transition: transform 0.2s ease;
+}
+.caption {
+  margin-top: 4px;
+  padding: 4px;
+  outline: none;
+  border-radius:6px;
+}
+.caption:focus { background:#eee; }
+#lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+#lightbox img {
+  max-width:90%;
+  max-height:90%;
+  border-radius:12px;
+}
+#trash {
+  position: fixed;
+  bottom:16px;
+  right:16px;
+  width:56px;
+  height:56px;
+  border-radius:14px;
+  background: rgba(0,0,0,0.75);
+  color: white;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  font-size:24px;
+  z-index:3000;
+  transition: transform 0.2s, background 0.2s;
+}
+#trash.active { background:#ff3b30; transform:scale(1.1); }
+#undoBtn {
+  position: fixed;
+  bottom:16px;
+  left:16px;
+  padding:8px 14px;
+  border-radius:10px;
+  border:none;
+  background:#007aff;
+  color:white;
+  font-size:14px;
+  z-index:3000;
 }
 </style>
 </head>
@@ -56,169 +113,354 @@ header {
 <header>PappySketch Smart Canvas</header>
 
 <div class="controls">
+  <select id="boardSelect"></select>
+  <button id="newBoard">New Board</button>
   <input type="file" id="upload" multiple>
+  <button id="exportBtn">Export PNG</button>
+  <button id="publishBtn">Publish Board</button>
 </div>
 
 <div class="gallery" id="gallery"></div>
 
+<div id="lightbox">
+  <img id="lightbox-img">
+</div>
+
+<div id="trash">🗑️</div>
+<button id="undoBtn" style="display:none;">Undo</button>
+
 <script>
 const gallery = document.getElementById('gallery');
 const upload = document.getElementById('upload');
-const spacing = 10;
+const exportBtn = document.getElementById('exportBtn');
+const lightbox = document.getElementById('lightbox');
+const lightboxImg = document.getElementById('lightbox-img');
+const trash = document.getElementById('trash');
+const undoBtn = document.getElementById('undoBtn');
+const boardSelect = document.getElementById('boardSelect');
+const newBoardBtn = document.getElementById('newBoard');
+const publishBtn = document.getElementById('publishBtn');
 
-let drag = null, offsetX = 0, offsetY = 0;
+let spacing = 10, columns = 3;
+let drag = null, offsetX=0, offsetY=0, pressTimer=null, HOLD_DELAY=180;
+let images = [], undoStack = [];
+let boards = JSON.parse(localStorage.getItem('pappysketch-boards') || '["Main"]');
+let currentBoard = localStorage.getItem('pappysketch-current') || boards[0];
 
-// Handle image uploads
-upload.onchange = e => {
-  const files = [...e.target.files];
-  const galleryRect = gallery.getBoundingClientRect();
+// -------------------- Helper Functions --------------------
+function boardKey(board){ return `pappysketch-board-${board}`; }
+function saveBoards(){ localStorage.setItem('pappysketch-boards', JSON.stringify(boards)); localStorage.setItem('pappysketch-current', currentBoard);}
+function clearGallery(){ gallery.innerHTML=''; images=[]; }
+function reorderImages(dragged){ images.sort((a,b)=>{if(a===dragged)return-1;if(b===dragged)return 1;return a.offsetTop-b.offsetTop||a.offsetLeft-b.offsetLeft;}); }
+function snapToColumns(dragItem){
+  const galleryWidth=gallery.clientWidth;
+  const colWidth=Math.floor((galleryWidth-(spacing*(columns+1)))/columns);
+  let left=parseInt(dragItem.style.left);
+  let nearestCol=Math.round((left-spacing)/(colWidth+spacing));
+  nearestCol=Math.max(0,Math.min(columns-1,nearestCol));
+  dragItem.style.left = spacing + nearestCol*(colWidth+spacing) + 'px';
+}
+function smartArrange(imgs){
+  const gap=spacing;
+  const galleryWidth=gallery.clientWidth;
+  const colWidth=Math.floor((galleryWidth-(gap*(columns+1)))/columns);
+  let colHeights=new Array(columns).fill(gap);
+  imgs.forEach(item=>{
+    const img=item.querySelector('img');
+    const caption=item.querySelector('.caption');
+    const ratio=img.naturalHeight/img.naturalWidth;
+    img.style.width=colWidth+'px';
+    img.style.height=colWidth*ratio+'px';
+    const col=colHeights.indexOf(Math.min(...colHeights));
+    item.style.left = gap + col*(colWidth+gap)+'px';
+    item.style.top = colHeights[col]+'px';
+    colHeights[col] += img.offsetHeight + caption.offsetHeight + gap;
+  });
+  gallery.style.height = Math.max(...colHeights)+'px';
+}
+function pushOthers(dragImg){
+  const dragRect=dragImg.getBoundingClientRect();
+  images.forEach(item=>{
+    if(item===dragImg) return;
+    const img=item.querySelector('img');
+    const caption=item.querySelector('.caption');
+    const r=item.getBoundingClientRect();
+    if(!(dragRect.right+spacing<r.left||dragRect.left-spacing>r.right||dragRect.bottom+spacing<r.top||dragRect.top-spacing>r.bottom)){
+      let topMove=0,leftMove=0;
+      if(dragRect.bottom>r.top&&dragRect.top<r.top){topMove=dragRect.bottom-r.top+spacing;}
+      else if(dragRect.top<r.bottom&&dragRect.bottom>r.bottom){topMove=dragRect.top-r.bottom-spacing;}
+      if(dragRect.right>r.left&&dragRect.left<r.left){leftMove=dragRect.right-r.left+spacing;}
+      else if(dragRect.left<r.right&&dragRect.right>r.right){leftMove=dragRect.left-r.right-spacing;}
+      item.style.top=parseInt(item.style.top)+topMove+'px';
+      item.style.left=parseInt(item.style.left)+leftMove+'px';
+    }
+  });
+}
+function saveLayout(){
+  const data=images.map(item=>{
+    const img=item.querySelector('img');
+    const cap=item.querySelector('.caption');
+    return {src:img.src, caption:cap.innerText};
+  });
+  localStorage.setItem(boardKey(currentBoard),JSON.stringify(data));
+}
+function loadLayout(){
+  const saved=JSON.parse(localStorage.getItem(boardKey(currentBoard))||'[]');
+  saved.forEach(data=>{
+    const item=document.createElement('div');
+    item.className='item';
+    const img=new Image();
+    img.src=data.src;
+    const caption=document.createElement('div');
+    caption.className='caption';
+    caption.contentEditable=true;
+    caption.innerText=data.caption||'';
+    item.appendChild(img);
+    item.appendChild(caption);
+    gallery.appendChild(item);
+    images.push(item);
+    makeDraggable(item);
+    enableLightbox(img);
+    enableZoom(img);
+    enableDuplicate(item);
+  });
+  if(images.length) smartArrange(images);
+}
 
-  files.forEach(file => {
-    const img = new Image();
-    img.src = URL.createObjectURL(file);
+// -------------------- Draggable + Long Press --------------------
+function makeDraggable(item){
+  const img=item.querySelector('img');
+  const startDrag=(x,y)=>{
+    drag=item;
+    offsetX=x-(parseInt(item.style.left)||0);
+    offsetY=y-(parseInt(item.style.top)||0);
+    item.style.transition='none';
+    item.style.cursor='grabbing';
+    trash.style.display='flex';
+  };
+  img.onmousedown=e=>{ pressTimer=setTimeout(()=>startDrag(e.pageX,e.pageY),HOLD_DELAY);};
+  img.onmouseup=img.onmouseleave=()=>clearTimeout(pressTimer);
+  img.ontouchstart=e=>{ const t=e.touches[0]; pressTimer=setTimeout(()=>startDrag(t.pageX,t.pageY),HOLD_DELAY);};
+  img.ontouchend=()=>clearTimeout(pressTimer);
+}
+window.onmousemove=window.ontouchmove=e=>{
+  if(!drag) return;
+  let x=e.pageX||e.touches[0].pageX;
+  let y=e.pageY||e.touches[0].pageY;
+  drag.style.left=x-offsetX+'px';
+  drag.style.top=y-offsetY+'px';
+  pushOthers(drag);
+  const t=trash.getBoundingClientRect();
+  const d=drag.getBoundingClientRect();
+  trash.classList.toggle('active',!(d.right<t.left||d.left>t.right||d.bottom<t.top||d.top>t.bottom));
+};
+window.onmouseup=window.ontouchend=()=>{
+  if(!drag) return;
+  const t=trash.getBoundingClientRect();
+  const d=drag.getBoundingClientRect();
+  const droppedInTrash=!(d.right<t.left||d.left>t.right||d.bottom<t.top||d.top>t.bottom);
+  trash.style.display='none';
+  trash.classList.remove('active');
+  if(droppedInTrash){
+    const img=drag.querySelector('img');
+    const cap=drag.querySelector('.caption');
+    undoStack.push({src:img.src, caption:cap.innerText});
+    undoBtn.style.display='block';
+    drag.remove();
+    images=images.filter(i=>i!==drag);
+  } else { snapToColumns(drag);}
+  drag=null;
+  smartArrange(images);
+  saveLayout();
+};
 
-    img.onload = () => {
-      const maxW = 150;
-      img.style.width = Math.min(maxW, img.naturalWidth) + 'px';
-      img.style.height = img.naturalHeight * (parseInt(img.style.width)/img.naturalWidth) + 'px';
+// -------------------- Lightbox --------------------
+function enableLightbox(img){
+  img.addEventListener('click',e=>{
+    if(drag) return;
+    lightboxImg.src=img.src;
+    lightbox.style.display='flex';
+  });
+}
+lightbox.onclick=()=>{ lightbox.style.display='none'; lightboxImg.src=''; };
 
-      img.style.position = 'absolute';
-      img.style.left = '0px';
-      img.style.top = '0px';
-      img.style.cursor = 'grab';
-      img.style.transition = 'left 0.2s, top 0.2s';
+// -------------------- Zoom --------------------
+function enableZoom(img){
+  let scale=1, startDist=0;
+  img.addEventListener('wheel',e=>{
+    e.preventDefault();
+    const delta=e.deltaY>0?-0.05:0.05;
+    scale=Math.min(Math.max(0.5,scale+delta),3);
+    img.style.transform=`scale(${scale})`;
+  });
+  img.addEventListener('touchmove',e=>{
+    if(e.touches.length===2){
+      e.preventDefault();
+      const dx=e.touches[0].pageX-e.touches[1].pageX;
+      const dy=e.touches[0].pageY-e.touches[1].pageY;
+      const dist=Math.hypot(dx,dy);
+      if(!startDist) startDist=dist;
+      const deltaScale=dist/startDist;
+      scale=Math.min(Math.max(0.5,deltaScale),3);
+      img.style.transform=`scale(${scale})`;
+    }
+  });
+  img.addEventListener('touchend',e=>{ if(e.touches.length<2) startDist=0; });
+  img.addEventListener('transitionend',()=>{ if(img.parentElement) smartArrange(images); });
+}
 
-      makeDraggable(img);
+// -------------------- Duplicate --------------------
+function enableDuplicate(item){
+  const img=item.querySelector('img');
+  let lastTap=0;
+  img.addEventListener('click',e=>{
+    const now=Date.now();
+    if(now-lastTap<300){
+      const newItem=item.cloneNode(true);
+      gallery.appendChild(newItem);
+      images.push(newItem);
+      makeDraggable(newItem);
+      enableLightbox(newItem.querySelector('img'));
+      enableZoom(newItem.querySelector('img'));
+      enableDuplicate(newItem);
+      smartArrange(images);
+      saveLayout();
+    }
+    lastTap=now;
+  });
+}
 
-      gallery.appendChild(img);
+// -------------------- Undo --------------------
+undoBtn.onclick=()=>{
+  if(!undoStack.length) return;
+  const data=undoStack.pop();
+  const item=document.createElement('div');
+  item.className='item';
+  const img=new Image();
+  img.src=data.src;
+  const caption=document.createElement('div');
+  caption.className='caption';
+  caption.contentEditable=true;
+  caption.innerText=data.caption||'';
+  item.appendChild(img);
+  item.appendChild(caption);
+  gallery.appendChild(item);
+  images.push(item);
+  makeDraggable(item);
+  enableLightbox(img);
+  enableZoom(img);
+  enableDuplicate(item);
+  smartArrange(images);
+  saveLayout();
+  if(!undoStack.length) undoBtn.style.display='none';
+};
 
-      const allImages = [...gallery.querySelectorAll('img')];
-      smartArrange(allImages);
-
-      URL.revokeObjectURL(img.src);
+// -------------------- Upload --------------------
+upload.onchange=e=>{
+  const files=[...e.target.files];
+  files.forEach(file=>{
+    const img=new Image();
+    img.src=URL.createObjectURL(file);
+    img.onload=()=>{
+      const item=document.createElement('div');
+      item.className='item';
+      const caption=document.createElement('div');
+      caption.className='caption';
+      caption.contentEditable=true;
+      caption.innerText='Add caption';
+      item.appendChild(img);
+      item.appendChild(caption);
+      gallery.appendChild(item);
+      images.push(item);
+      makeDraggable(item);
+      enableLightbox(img);
+      enableZoom(img);
+      enableDuplicate(item);
+      smartArrange(images);
+      saveLayout();
     };
   });
-
-  upload.value = '';
+  upload.value='';
 };
 
-// Make images draggable (desktop + mobile)
-function makeDraggable(img){
-  // Mouse
-  img.onmousedown = e => {
-    drag = img;
-    offsetX = e.pageX - (parseInt(img.style.left) || 0);
-    offsetY = e.pageY - (parseInt(img.style.top) || 0);
-    img.style.transition = 'none';
-    img.style.cursor = 'grabbing';
-  };
-
-  // Touch
-  img.ontouchstart = e => {
-    e.preventDefault();
-    drag = img;
-    const touch = e.touches[0];
-    offsetX = touch.pageX - (parseInt(img.style.left) || 0);
-    offsetY = touch.pageY - (parseInt(img.style.top) || 0);
-    img.style.transition = 'none';
-  };
-}
-
-// Dragging
-window.onmousemove = e => {
-  if(!drag) return;
-  drag.style.left = e.pageX - offsetX + 'px';
-  drag.style.top = e.pageY - offsetY + 'px';
-  pushOthers(drag);
-};
-window.ontouchmove = e => {
-  if(!drag) return;
-  const touch = e.touches[0];
-  drag.style.left = touch.pageX - offsetX + 'px';
-  drag.style.top = touch.pageY - offsetY + 'px';
-  pushOthers(drag);
-};
-window.onmouseup = window.ontouchend = () => {
-  if(drag){
-    drag.style.transition = 'left 0.2s, top 0.2s';
-    drag.style.cursor = 'grab';
-  }
-  drag = null;
-};
-
-// Smart arrangement
-function smartArrange(images){
-  let x = spacing, y = spacing;
-  let rowHeight = 0;
-
-  images.forEach(img => {
-    const w = parseInt(img.style.width);
-    const h = parseInt(img.style.height);
-
-    if(x + w + spacing > window.innerWidth){
-      x = spacing;
-      y += rowHeight + spacing;
-      rowHeight = 0;
-    }
-
-    img.style.left = x + 'px';
-    img.style.top = y + 'px';
-
-    x += w + spacing;
-    rowHeight = Math.max(rowHeight, h);
+// -------------------- Export --------------------
+exportBtn.onclick=()=>{
+  if(!images.length) return;
+  let maxRight=0,maxBottom=0;
+  images.forEach(item=>{
+    const img=item.querySelector('img');
+    const cap=item.querySelector('.caption');
+    maxRight=Math.max(maxRight,item.offsetLeft+img.offsetWidth);
+    maxBottom=Math.max(maxBottom,item.offsetTop+img.offsetHeight+cap.offsetHeight);
   });
-
-  // Adjust gallery height to fit all images for scrolling
-  let maxBottom = 0;
-  images.forEach(img => {
-    const bottom = parseInt(img.style.top) + parseInt(img.style.height);
-    if(bottom > maxBottom) maxBottom = bottom;
+  const canvas=document.createElement('canvas');
+  canvas.width=maxRight+spacing;
+  canvas.height=maxBottom+spacing;
+  const ctx=canvas.getContext('2d');
+  ctx.fillStyle='#ffffff';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  images.forEach(item=>{
+    const img=item.querySelector('img');
+    const cap=item.querySelector('.caption');
+    ctx.drawImage(img,item.offsetLeft,item.offsetTop,img.offsetWidth,img.offsetHeight);
+    ctx.fillStyle='#555';
+    ctx.font='12px -apple-system';
+    ctx.textAlign='center';
+    ctx.fillText(cap.innerText,item.offsetLeft+img.offsetWidth/2,item.offsetTop+img.offsetHeight+12);
   });
-  gallery.style.height = (maxBottom + spacing) + 'px';
-}
+  const link=document.createElement('a');
+  link.download=`${currentBoard}.png`;
+  link.href=canvas.toDataURL('image/png');
+  link.click();
+};
 
-// Prevent overlap while dragging
-function pushOthers(dragImg){
-  const imgs = [...gallery.querySelectorAll('img')];
-  const dragRect = dragImg.getBoundingClientRect();
+// -------------------- Publish --------------------
+publishBtn.onclick=()=>{
+  if(!images.length) return alert('Nothing to publish!');
+  let html=`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${currentBoard} - PappySketch</title><style>
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#f5f5f7;}
+  .gallery{display:flex;flex-wrap:wrap;gap:10px;padding:10px;}
+  .item img{max-width:150px;border-radius:8px;}
+  .caption{font-size:12px;text-align:center;margin-top:4px;}
+  </style></head><body><h2 style="text-align:center;margin:12px 0;">${currentBoard}</h2><div class="gallery">`;
+  images.forEach(item=>{
+    const img=item.querySelector('img');
+    const cap=item.querySelector('.caption');
+    html+=`<div class="item"><img src="${img.src}"><div class="caption">${cap.innerText}</div></div>`;
+  });
+  html+='</div></body></html>';
+  const blob=new Blob([html],{type:'text/html'});
+  const link=document.createElement('a');
+  link.download=`${currentBoard}.html`;
+  link.href=URL.createObjectURL(blob);
+  link.click();
+  URL.revokeObjectURL(link.href);
+};
 
-  imgs.forEach(img => {
-    if(img === dragImg) return;
-    const r = img.getBoundingClientRect();
-
-    if(isOverlapping(dragRect, r)){
-      let topMove = 0, leftMove = 0;
-
-      if(dragRect.bottom > r.top && dragRect.top < r.top){
-        topMove = dragRect.bottom - r.top + spacing;
-      } else if(dragRect.top < r.bottom && dragRect.bottom > r.bottom){
-        topMove = dragRect.top - r.bottom - spacing;
-      }
-
-      if(dragRect.right > r.left && dragRect.left < r.left){
-        leftMove = dragRect.right - r.left + spacing;
-      } else if(dragRect.left < r.right && dragRect.right > r.right){
-        leftMove = dragRect.left - r.right - spacing;
-      }
-
-      img.style.top = parseInt(img.style.top) + topMove + 'px';
-      img.style.left = parseInt(img.style.left) + leftMove + 'px';
-    }
+// -------------------- Boards --------------------
+function refreshBoardUI(){
+  boardSelect.innerHTML='';
+  boards.forEach(b=>{
+    const opt=document.createElement('option');
+    opt.value=b; opt.textContent=b;
+    if(b===currentBoard) opt.selected=true;
+    boardSelect.appendChild(opt);
   });
 }
-
-function isOverlapping(a, b){
-  return !(a.right + spacing < b.left ||
-           a.left - spacing > b.right ||
-           a.bottom + spacing < b.top ||
-           a.top - spacing > b.bottom);
-}
-
-// Responsive layout
-window.onresize = () => {
-  const imgs = [...gallery.querySelectorAll('img')];
-  if(imgs.length) smartArrange(imgs);
+boardSelect.onchange=()=>{
+  saveLayout(); clearGallery();
+  currentBoard=boardSelect.value;
+  loadLayout(); saveBoards();
 };
+newBoardBtn.onclick=()=>{
+  const name=prompt('Board name'); if(!name) return;
+  boards.push(name); currentBoard=name; saveBoards();
+  refreshBoardUI(); clearGallery();
+};
+refreshBoardUI(); loadLayout();
+
+// -------------------- Window Resize --------------------
+window.onresize=()=>{ if(images.length) smartArrange(images); };
 </script>
 </body>
 </html>
