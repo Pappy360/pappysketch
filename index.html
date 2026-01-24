@@ -46,78 +46,15 @@ header {
   right:0;
   min-height:100px;
 }
-.item {
-  position: absolute;
-}
-.item img {
-  cursor: grab;
-  user-select: none;
-  touch-action: none;
-}
-#lightbox {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.85);
-  display: none;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-}
-#lightbox img {
-  max-width:90%;
-  max-height:90%;
-  border-radius:12px;
-}
-#trash {
-  position: fixed;
-  bottom:16px;
-  right:16px;
-  width:56px;
-  height:56px;
-  border-radius:14px;
-  background: rgba(0,0,0,0.75);
-  color: white;
-  display:none;
-  align-items:center;
-  justify-content:center;
-  font-size:24px;
-  z-index:3000;
-  transition: transform 0.2s, background 0.2s;
-}
+.item { position: absolute; }
+.item img { cursor: grab; user-select: none; touch-action: none; }
+#trash { position: fixed; bottom:16px; right:16px; width:56px; height:56px; border-radius:14px; background: rgba(0,0,0,0.75); color:white; display:none; align-items:center; justify-content:center; font-size:24px; z-index:3000; transition: transform 0.2s, background 0.2s;}
 #trash.active { background:#ff3b30; transform:scale(1.1); }
-#undoBtn {
-  position: fixed;
-  bottom:16px;
-  left:16px;
-  padding:8px 14px;
-  border-radius:10px;
-  border:none;
-  background:#007aff;
-  color:white;
-  font-size:14px;
-  z-index:3000;
-}
-#imgMenu {
-  position: fixed;
-  display: none;
-  background: white;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  z-index: 4000;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-}
-#imgMenu button {
-  display:block;
-  padding:8px 12px;
-  width:100%;
-  border:none;
-  background:none;
-  text-align:left;
-  cursor:pointer;
-}
-#imgMenu button:hover {
-  background:#f0f0f0;
-}
+#undoBtn { position: fixed; bottom:16px; left:16px; padding:8px 14px; border-radius:10px; border:none; background:#007aff; color:white; font-size:14px; z-index:3000;}
+#imgMenu { position: fixed; display: none; background:white; border:1px solid #ccc; border-radius:8px; z-index:4000; box-shadow:0 4px 12px rgba(0,0,0,0.2);}
+#imgMenu button { display:block; padding:8px 12px; width:100%; border:none; background:none; text-align:left; cursor:pointer;}
+#imgMenu button:hover { background:#f0f0f0;}
+#menu { display:none; margin-top:6px; }
 </style>
 </head>
 <body>
@@ -126,25 +63,20 @@ header {
 
 <div class="controls">
   <button id="menuToggle">⋯</button>
-  <div id="menu" style="display:none; margin-top:6px;">
+  <div id="menu">
+    <select id="boardSelect"></select>
     <button id="newBoard">Add Board</button>
     <button id="deleteBoard">Delete Board</button>
+    <input type="file" id="upload" multiple>
     <button id="exportBtn">Export PNG</button>
     <button id="publishBtn">Publish Board</button>
     <label for="musicInput">🎵 Board Music URL:</label>
     <input type="text" id="musicInput" placeholder="Paste music URL here">
     <button id="musicToggle">Play Music</button>
   </div>
-  <select id="boardSelect"></select>
-  <input type="file" id="upload" multiple>
 </div>
 
 <div class="gallery" id="gallery"></div>
-
-<!-- Lightbox -->
-<div id="lightbox">
-  <img id="lightbox-img">
-</div>
 
 <!-- Trash & Undo -->
 <div id="trash">🗑️</div>
@@ -156,46 +88,50 @@ header {
   <button id="deleteBtn">Delete</button>
 </div>
 
-<!-- html2canvas -->
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-
 <script>
-const gallery = document.getElementById('gallery');
-const upload = document.getElementById('upload');
-const trash = document.getElementById('trash');
-const undoBtn = document.getElementById('undoBtn');
-const boardSelect = document.getElementById('boardSelect');
-const newBoardBtn = document.getElementById('newBoard');
-const deleteBoardBtn = document.getElementById('deleteBoard');
-const exportBtn = document.getElementById('exportBtn');
-const publishBtn = document.getElementById('publishBtn');
-const menuToggle = document.getElementById('menuToggle');
-const menu = document.getElementById('menu');
-const imgMenu = document.getElementById('imgMenu');
-const editBtn = document.getElementById('editBtn');
-const deleteBtn = document.getElementById('deleteBtn');
-const musicInput = document.getElementById('musicInput');
-const musicBtn = document.getElementById('musicToggle');
-const bgMusic = document.getElementById('bgMusic');
+const gallery=document.getElementById('gallery');
+const trash=document.getElementById('trash');
+const undoBtn=document.getElementById('undoBtn');
+const boardSelect=document.getElementById('boardSelect');
+const newBoardBtn=document.getElementById('newBoard');
+const deleteBoardBtn=document.getElementById('deleteBoard');
+const exportBtn=document.getElementById('exportBtn');
+const publishBtn=document.getElementById('publishBtn');
+const menuToggle=document.getElementById('menuToggle');
+const menu=document.getElementById('menu');
+const imgMenu=document.getElementById('imgMenu');
+const editBtn=document.getElementById('editBtn');
+const deleteBtn=document.getElementById('deleteBtn');
+const upload=document.getElementById('upload');
+const musicInput=document.getElementById('musicInput');
+const musicBtn=document.getElementById('musicToggle');
+const bgMusic=document.createElement('audio');
+bgMusic.loop=true;
+document.body.appendChild(bgMusic);
 
-let drag = null;
-let images = [], undoStack = [];
-let boards = JSON.parse(localStorage.getItem('pappysketch-boards') || '["Main"]');
-let currentBoard = localStorage.getItem('pappysketch-current') || boards[0];
-let selectedItem = null;
-let columns = 3;
+let images=[], undoStack=[], boards=JSON.parse(localStorage.getItem('pappysketch-boards')||'["Main"]'), currentBoard=localStorage.getItem('pappysketch-current')||boards[0], selectedItem=null, columns=3;
+let musicUnlocked=false;
+
+// -------------------- Unlock audio on first click --------------------
+window.addEventListener('click', function unlockMusic(){
+  if(!musicUnlocked){
+    bgMusic.play().then(()=>{bgMusic.pause(); musicUnlocked=true;}).catch(()=>{});
+    window.removeEventListener('click', unlockMusic);
+  }
+});
 
 // -------------------- Helper Functions --------------------
-function boardKey(board){ return `pappysketch-board-${board}`; }
-function saveBoards(){ localStorage.setItem('pappysketch-boards', JSON.stringify(boards)); localStorage.setItem('pappysketch-current', currentBoard);}
-function clearGallery(){ gallery.innerHTML=''; images=[]; }
+function boardKey(board){return `pappysketch-board-${board}`;}
+function saveBoards(){localStorage.setItem('pappysketch-boards',JSON.stringify(boards)); localStorage.setItem('pappysketch-current',currentBoard);}
+function clearGallery(){gallery.innerHTML=''; images=[];}
 function snapToColumns(dragItem){
   const galleryWidth=gallery.clientWidth;
   const colWidth=Math.floor(galleryWidth/columns);
   let left=parseInt(dragItem.style.left);
   let nearestCol=Math.round(left/colWidth);
   nearestCol=Math.max(0,Math.min(columns-1,nearestCol));
-  dragItem.style.left = nearestCol*colWidth + 'px';
+  dragItem.style.left=nearestCol*colWidth+'px';
 }
 function smartArrange(imgs){
   const galleryWidth=gallery.clientWidth;
@@ -207,11 +143,11 @@ function smartArrange(imgs){
     img.style.width=colWidth+'px';
     img.style.height=colWidth*ratio+'px';
     const col=colHeights.indexOf(Math.min(...colHeights));
-    item.style.left = col*colWidth+'px';
-    item.style.top = colHeights[col]+'px';
-    colHeights[col] += img.offsetHeight;
+    item.style.left=col*colWidth+'px';
+    item.style.top=colHeights[col]+'px';
+    colHeights[col]+=img.offsetHeight;
   });
-  gallery.style.height = Math.max(...colHeights)+'px';
+  gallery.style.height=Math.max(...colHeights)+'px';
 }
 function pushOthers(dragImg){
   const dragRect=dragImg.getBoundingClientRect();
@@ -248,191 +184,92 @@ function loadLayout(){
   if(images.length) smartArrange(images);
 }
 
-// -------------------- Draggable + Tap Menu --------------------
+// -------------------- Draggable --------------------
 function makeDraggable(item){
-  const img = item.querySelector('img');
-  let isDragging = false;
-  let startX, startY;
-
-  img.addEventListener('mousedown', e => {
+  const img=item.querySelector('img');
+  let isDragging=false,startX,startY;
+  img.addEventListener('mousedown',e=>{
     e.preventDefault();
-    isDragging = true;
-    startX = e.pageX - (parseInt(item.style.left)||0);
-    startY = e.pageY - (parseInt(item.style.top)||0);
-    item.style.cursor = 'grabbing';
-    trash.style.display = 'flex';
+    isDragging=true;
+    startX=e.pageX-(parseInt(item.style.left)||0);
+    startY=e.pageY-(parseInt(item.style.top)||0);
+    item.style.cursor='grabbing';
+    trash.style.display='flex';
   });
-  img.addEventListener('touchstart', e => {
-    const t = e.touches[0];
-    isDragging = true;
-    startX = t.pageX - (parseInt(item.style.left)||0);
-    startY = t.pageY - (parseInt(item.style.top)||0);
-    trash.style.display = 'flex';
-  }, {passive: false});
-
-  window.addEventListener('mousemove', e=>{
+  img.addEventListener('touchstart',e=>{
+    const t=e.touches[0];
+    isDragging=true;
+    startX=t.pageX-(parseInt(item.style.left)||0);
+    startY=t.pageY-(parseInt(item.style.top)||0);
+    trash.style.display='flex';
+  },{passive:false});
+  window.addEventListener('mousemove',e=>{
     if(!isDragging) return;
-    item.style.left = e.pageX - startX + 'px';
-    item.style.top = e.pageY - startY + 'px';
+    item.style.left=e.pageX-startX+'px';
+    item.style.top=e.pageY-startY+'px';
     pushOthers(item);
   });
-  window.addEventListener('touchmove', e=>{
+  window.addEventListener('touchmove',e=>{
     if(!isDragging) return;
-    const t = e.touches[0];
-    item.style.left = t.pageX - startX + 'px';
-    item.style.top = t.pageY - startY + 'px';
+    const t=e.touches[0];
+    item.style.left=t.pageX-startX+'px';
+    item.style.top=t.pageY-startY+'px';
     pushOthers(item);
-  }, {passive: false});
-
+  },{passive:false});
   function stopDrag(){
     if(!isDragging) return;
-    // Delete if dropped on trash
-    const tr = trash.getBoundingClientRect();
-    const it = item.getBoundingClientRect();
+    const tr=trash.getBoundingClientRect();
+    const it=item.getBoundingClientRect();
     if(it.right>tr.left && it.left<tr.right && it.bottom>tr.top && it.top<tr.bottom){
       undoStack.push({src:item.querySelector('img').src});
       undoBtn.style.display='block';
       item.remove();
-      images = images.filter(i=>i!==item);
+      images=images.filter(i=>i!==item);
       saveLayout();
     }
-    trash.style.display = 'none';
+    trash.style.display='none';
     snapToColumns(item);
-    item.style.cursor = 'grab';
+    item.style.cursor='grab';
     smartArrange(images);
     saveLayout();
-    isDragging = false;
+    isDragging=false;
   }
-  window.addEventListener('mouseup', stopDrag);
-  window.addEventListener('touchend', stopDrag);
-
-  img.addEventListener('click', e=>{
+  window.addEventListener('mouseup',stopDrag);
+  window.addEventListener('touchend',stopDrag);
+  img.addEventListener('click',e=>{
     if(isDragging) return;
     e.stopPropagation();
-    selectedItem = item;
-    imgMenu.style.display = 'block';
-    imgMenu.style.left = Math.min(e.pageX, window.innerWidth - imgMenu.offsetWidth)+'px';
-    imgMenu.style.top = Math.min(e.pageY, window.innerHeight - imgMenu.offsetHeight)+'px';
+    selectedItem=item;
+    imgMenu.style.display='block';
+    imgMenu.style.left=Math.min(e.pageX, window.innerWidth-imgMenu.offsetWidth)+'px';
+    imgMenu.style.top=Math.min(e.pageY, window.innerHeight-imgMenu.offsetHeight)+'px';
   });
 }
 
-// -------------------- Tap Menu Actions --------------------
-window.addEventListener('click', ()=>{
-  imgMenu.style.display='none';
-  selectedItem=null;
-});
-
-deleteBtn.onclick = ()=>{
-  if(selectedItem){
-    const img = selectedItem.querySelector('img');
-    undoStack.push({src: img.src});
-    undoBtn.style.display = 'block';
-    selectedItem.remove();
-    images = images.filter(i=>i!==selectedItem);
-    saveLayout();
-    imgMenu.style.display='none';
-    selectedItem=null;
-  }
-};
-
-editBtn.onclick = ()=>{
-  if(selectedItem){
-    alert('Edit feature not implemented yet!');
-    imgMenu.style.display='none';
-    selectedItem=null;
-  }
-};
-
-// -------------------- Undo --------------------
-undoBtn.onclick=()=>{
-  if(!undoStack.length) return;
-  const data=undoStack.pop();
-  const item=document.createElement('div');
-  item.className='item';
-  const img=new Image();
-  img.src=data.src;
-  item.appendChild(img);
-  gallery.appendChild(item);
-  images.push(item);
-  makeDraggable(item);
-  smartArrange(images);
-  saveLayout();
-  if(!undoStack.length) undoBtn.style.display='none';
-};
+// -------------------- Tap Menu --------------------
+window.addEventListener('click',()=>{imgMenu.style.display='none'; selectedItem=null;});
+deleteBtn.onclick=()=>{if(selectedItem){undoStack.push({src:selectedItem.querySelector('img').src}); undoBtn.style.display='block'; selectedItem.remove(); images=images.filter(i=>i!==selectedItem); saveLayout(); imgMenu.style.display='none'; selectedItem=null;}};
+editBtn.onclick=()=>{if(selectedItem){alert('Edit not implemented'); imgMenu.style.display='none'; selectedItem=null;}};
+undoBtn.onclick=()=>{if(!undoStack.length) return; const data=undoStack.pop(); const item=document.createElement('div'); item.className='item'; const img=new Image(); img.src=data.src; item.appendChild(img); gallery.appendChild(item); images.push(item); makeDraggable(item); smartArrange(images); saveLayout(); if(!undoStack.length) undoBtn.style.display='none';};
 
 // -------------------- Upload --------------------
-upload.onchange=e=>{
-  const files=[...e.target.files];
-  files.forEach(file=>{
-    const img=new Image();
-    img.src=URL.createObjectURL(file);
-    img.onload=()=>{
-      const item=document.createElement('div');
-      item.className='item';
-      item.appendChild(img);
-      gallery.appendChild(item);
-      images.push(item);
-      makeDraggable(item);
-      smartArrange(images);
-      saveLayout();
-    };
-  });
-  upload.value='';
-};
+upload.onchange=e=>{const files=[...e.target.files]; files.forEach(file=>{const img=new Image(); img.src=URL.createObjectURL(file); img.onload=()=>{const item=document.createElement('div'); item.className='item'; item.appendChild(img); gallery.appendChild(item); images.push(item); makeDraggable(item); smartArrange(images); saveLayout();};}); upload.value='';};
 
 // -------------------- Boards --------------------
-function refreshBoardUI(){
-  boardSelect.innerHTML='';
-  boards.forEach(b=>{
-    const opt=document.createElement('option');
-    opt.value=b; opt.textContent=b;
-    if(b===currentBoard) opt.selected=true;
-    boardSelect.appendChild(opt);
-  });
-}
-
-boardSelect.onchange=()=>{
-  saveLayout(); clearGallery();
-  currentBoard=boardSelect.value;
-  loadLayout(); loadBoardMusic(true);
-  saveBoards();
-};
-
-newBoardBtn.onclick=()=>{
-  const name=prompt('Board name'); if(!name) return;
-  boards.push(name); currentBoard=name; saveBoards();
-  refreshBoardUI(); clearGallery();
-  menu.style.display='none';
-};
-
-deleteBoardBtn.onclick = () => {
-  if(boards.length <= 1){ alert("Cannot delete last board!"); return; }
-  if(!confirm(`Delete board "${currentBoard}"?`)) return;
-  localStorage.removeItem(boardKey(currentBoard));
-  localStorage.removeItem(`pappysketch-music-${currentBoard}`);
-  boards = boards.filter(b=>b!==currentBoard);
-  currentBoard = boards[0];
-  saveBoards();
-  refreshBoardUI();
-  clearGallery();
-  loadLayout();
-  loadBoardMusic(true);
-  menu.style.display='none';
-};
+function refreshBoardUI(){boardSelect.innerHTML=''; boards.forEach(b=>{const opt=document.createElement('option'); opt.value=b; opt.textContent=b; if(b===currentBoard) opt.selected=true; boardSelect.appendChild(opt);});}
+boardSelect.onchange=()=>{saveLayout(); clearGallery(); currentBoard=boardSelect.value; loadLayout(); loadBoardMusic(true); saveBoards();};
+newBoardBtn.onclick=()=>{const name=prompt('Board name'); if(!name) return; boards.push(name); currentBoard=name; saveBoards(); refreshBoardUI(); clearGallery(); menu.style.display='none';};
+deleteBoardBtn.onclick=()=>{if(boards.length<=1){alert("Cannot delete last board!"); return;} if(!confirm(`Delete board "${currentBoard}"?`)) return; localStorage.removeItem(boardKey(currentBoard)); localStorage.removeItem(`pappysketch-music-${currentBoard}`); boards=boards.filter(b=>b!==currentBoard); currentBoard=boards[0]; saveBoards(); refreshBoardUI(); clearGallery(); loadLayout(); loadBoardMusic(true); menu.style.display='none';};
 
 // -------------------- Menu Toggle --------------------
-menuToggle.onclick = ()=>{ menu.style.display = menu.style.display==='block'?'none':'block'; };
-window.addEventListener('click', e=>{ if(!menu.contains(e.target)&&e.target!==menuToggle) menu.style.display='none'; });
+menuToggle.onclick=()=>{menu.style.display=menu.style.display==='block'?'none':'block';};
+window.addEventListener('click',e=>{if(!menu.contains(e.target)&&e.target!==menuToggle) menu.style.display='none';});
 
-// -------------------- Window Resize --------------------
-window.onresize=()=>{ if(images.length) smartArrange(images); };
-
-// -------------------- Export PNG --------------------
+// -------------------- Export --------------------
 exportBtn.onclick=async()=>{
   menu.style.display='none';
-  if(!images.length){ alert("No images to export!"); return; }
-
-  const galleryClone = gallery.cloneNode(true);
+  if(!images.length){alert("No images to export!"); return;}
+  const galleryClone=gallery.cloneNode(true);
   galleryClone.style.position='absolute';
   galleryClone.style.left='0';
   galleryClone.style.top='0';
@@ -440,74 +277,24 @@ exportBtn.onclick=async()=>{
   galleryClone.style.height=gallery.clientHeight+'px';
   galleryClone.style.background='#f5f5f7';
   document.body.appendChild(galleryClone);
-
-  galleryClone.querySelectorAll('.item').forEach((item,i)=>{
-    const orig = images[i];
-    item.style.position='absolute';
-    item.style.left=orig.style.left;
-    item.style.top=orig.style.top;
-    const img=item.querySelector('img');
-    img.style.width = orig.querySelector('img').offsetWidth+'px';
-    img.style.height = orig.querySelector('img').offsetHeight+'px';
-  });
-
-  try{
-    const canvas = await html2canvas(galleryClone,{backgroundColor:null,scale:2,allowTaint:true,useCORS:true});
-    const link = document.createElement('a');
-    link.download = `${currentBoard}.png`;
-    link.href = canvas.toDataURL("image/png");
-    link.click();
-  }catch(err){ console.error(err); alert("Failed to export PNG."); }
-  finally{ document.body.removeChild(galleryClone); }
+  galleryClone.querySelectorAll('.item').forEach((item,i)=>{const orig=images[i]; item.style.position='absolute'; item.style.left=orig.style.left; item.style.top=orig.style.top; const img=item.querySelector('img'); img.style.width=orig.querySelector('img').offsetWidth+'px'; img.style.height=orig.querySelector('img').offsetHeight+'px';});
+  try{const canvas=await html2canvas(galleryClone,{backgroundColor:null,scale:2,allowTaint:true,useCORS:true}); const link=document.createElement('a'); link.download=`${currentBoard}.png`; link.href=canvas.toDataURL("image/png"); link.click();}catch(err){console.error(err); alert("Failed to export PNG");} finally{document.body.removeChild(galleryClone);}
 };
 
-// -------------------- Publish Button Placeholder --------------------
-publishBtn.onclick = () => { alert('Publish not implemented yet'); menu.style.display='none'; };
+// -------------------- Publish Placeholder -----------------
+publishBtn.onclick=()=>{alert('Publish not implemented yet'); menu.style.display='none';};
 
-// -------------------- Music Functions --------------------
-function fadeAudio(audio,targetVolume,duration=800){
-  if(!audio) return;
-  const stepTime=50, steps=duration/stepTime, stepAmount=(targetVolume-audio.volume)/steps;
-  let i=0;
-  const interval=setInterval(()=>{
-    i++;
-    let v=audio.volume+stepAmount;
-    v=Math.min(Math.max(v,0),1);
-    audio.volume=v;
-    if(i>=steps){ clearInterval(interval); audio.volume=targetVolume; if(targetVolume===0) audio.pause();}
-  },stepTime);
-}
+// -------------------- Music -----------------
+function fadeAudio(audio,target,duration=800){if(!audio) return; const stepTime=50,steps=duration/stepTime,stepAmt=(target-audio.volume)/steps; let i=0; const interval=setInterval(()=>{i++; let v=audio.volume+stepAmt; v=Math.min(Math.max(v,0),1); if(i>=steps){clearInterval(interval); audio.volume=target; if(target===0) audio.pause();}},stepTime);}
+function loadBoardMusic(autoPlay=true){const url=localStorage.getItem(`pappysketch-music-${currentBoard}`)||''; musicInput.value=url; bgMusic.src=url; if(!url){fadeAudio(bgMusic,0,500); musicBtn.textContent='🎵 No Music'; return;} if(autoPlay && musicUnlocked){bgMusic.volume=0; bgMusic.play().then(()=>fadeAudio(bgMusic,1,800)); musicBtn.textContent='🎵 Pause Music';} else{bgMusic.volume=1; musicBtn.textContent='🎵 Play Music';}}
+musicInput.onchange=()=>{localStorage.setItem(`pappysketch-music-${currentBoard}`,musicInput.value); bgMusic.src=musicInput.value; loadBoardMusic(false);}
+musicBtn.onclick=()=>{if(!bgMusic.src) return alert("No music URL set!"); if(bgMusic.paused){bgMusic.play(); fadeAudio(bgMusic,1,800); musicBtn.textContent='🎵 Pause Music';} else{fadeAudio(bgMusic,0,800); musicBtn.textContent='🎵 Play Music'; menu.style.display='none';}};
 
-function loadBoardMusic(autoPlay=true){
-  const url=localStorage.getItem(`pappysketch-music-${currentBoard}`)||'';
-  musicInput.value=url;
-  if(!url){ fadeAudio(bgMusic,0,500); musicBtn.textContent='🎵 No Music'; return; }
-  if(bgMusic.src && bgMusic.src!==url) fadeAudio(bgMusic,0,500);
-  bgMusic.src=url; bgMusic.loop=true;
-  if(autoPlay){
-    bgMusic.volume=0;
-    bgMusic.play().then(()=>fadeAudio(bgMusic,1,800).then?musicBtn.textContent='🎵 Pause Music':musicBtn.textContent='🎵 Pause Music').catch(()=>musicBtn.textContent='🎵 Play Music');
-  } else { bgMusic.volume=1; musicBtn.textContent='🎵 Play Music'; }
-}
+// -------------------- Resize -----------------
+window.onresize=()=>{if(images.length) smartArrange(images);};
 
-musicInput.onchange = () => {
-  localStorage.setItem(`pappysketch-music-${currentBoard}`,musicInput.value);
-  bgMusic.src = musicInput.value;
-  loadBoardMusic(false);
-};
-
-musicBtn.onclick = () => {
-  if(!bgMusic.src) return alert("No music URL set!");
-  if(bgMusic.paused){ bgMusic.play(); fadeAudio(bgMusic,1,800); musicBtn.textContent='🎵 Pause Music'; }
-  else{ fadeAudio(bgMusic,0,800); musicBtn.textContent='🎵 Play Music'; menu.style.display='none'; }
-};
-
-// -------------------- Tap Menu Music Start --------------------
-loadBoardMusic(true);
-
-// -------------------- Initialize Boards --------------------
-refreshBoardUI();
-loadLayout();
+// -------------------- Initialize -----------------
+refreshBoardUI(); loadLayout(); loadBoardMusic(false);
 </script>
 </body>
 </html>
