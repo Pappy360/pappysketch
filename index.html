@@ -11,7 +11,6 @@ body{
   font-family:-apple-system,BlinkMacSystemFont,sans-serif;
   background:#f5f5f7;
   overflow-y:auto;
-  user-select:none;
 }
 header{
   height:60px;
@@ -45,44 +44,15 @@ header{
 .gallery{
   position:relative;
   top:60px;
-  min-height:100px;
 }
 .item{
   position:absolute;
 }
 .item img{
-  cursor:grab;
-  touch-action:none;
+  width:100%;
+  cursor:pointer;
   user-select:none;
   -webkit-user-drag:none;
-}
-#trash{
-  position:fixed;
-  bottom:16px;
-  right:16px;
-  width:56px;
-  height:56px;
-  border-radius:14px;
-  background:rgba(0,0,0,0.75);
-  color:white;
-  display:none;
-  align-items:center;
-  justify-content:center;
-  font-size:24px;
-  z-index:3000;
-}
-#undoBtn{
-  position:fixed;
-  bottom:16px;
-  left:16px;
-  padding:8px 14px;
-  border-radius:10px;
-  border:none;
-  background:#007aff;
-  color:white;
-  font-size:14px;
-  display:none;
-  z-index:3000;
 }
 #menu{display:none;margin-top:6px;}
 </style>
@@ -100,27 +70,20 @@ header{
     <button id="deleteBoard">Delete Board</button>
     <input type="file" id="upload" multiple>
     <button id="exportBtn">Export PNG</button>
-    <button id="publishBtn">Publish Board</button>
   </div>
 </div>
 
 <div class="gallery" id="gallery"></div>
-<div id="trash">🗑️</div>
-<button id="undoBtn">Undo</button>
 
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script>
 const gallery = document.getElementById('gallery');
-const trash = document.getElementById('trash');
-const undoBtn = document.getElementById('undoBtn');
 const upload = document.getElementById('upload');
 const boardSelect = document.getElementById('boardSelect');
 const menuToggle = document.getElementById('menuToggle');
 const menu = document.getElementById('menu');
 
 let images = [];
-let undoStack = [];
-let activeDrag = null;
 const columns = 3;
 
 let boards = JSON.parse(localStorage.getItem('pappysketch-boards') || '["Main"]');
@@ -151,13 +114,12 @@ function updateGalleryHeight(){
   )+'px';
 }
 
-function reflowMasonry(skip=null){
+function reflowMasonry(){
   const w = gallery.clientWidth;
   const colW = Math.floor(w/columns);
   const heights = new Array(columns).fill(0);
 
   images.forEach(item=>{
-    if(item===skip) return;
     const img=item.querySelector('img');
     const r=img.naturalHeight/img.naturalWidth;
     img.style.width=colW+'px';
@@ -175,9 +137,7 @@ function saveLayout(){
   localStorage.setItem(
     boardKey(currentBoard),
     JSON.stringify(images.map(i=>({
-      src:i.querySelector('img').src,
-      left:i.style.left,
-      top:i.style.top
+      src:i.querySelector('img').src
     })))
   );
 }
@@ -187,70 +147,31 @@ function clearGallery(){
   images=[];
 }
 
+function makeDeletable(item){
+  const img=item.querySelector('img');
+  img.onclick=()=>{
+    if(!confirm('Delete this image?')) return;
+    item.remove();
+    images=images.filter(i=>i!==item);
+    reflowMasonry();
+    saveLayout();
+  };
+}
+
 function loadLayout(){
   const saved=JSON.parse(localStorage.getItem(boardKey(currentBoard))||'[]');
   saved.forEach(d=>{
     const item=document.createElement('div');
     item.className='item';
-    item.style.left=d.left;
-    item.style.top=d.top;
     const img=new Image();
     img.src=d.src;
     item.appendChild(img);
     gallery.appendChild(item);
     images.push(item);
-    makeDraggable(item);
-  });
-  if(images.length) reflowMasonry();
-}
-
-function makeDraggable(item){
-  const img=item.querySelector('img');
-  let startX,startY,isDragging=false;
-
-  img.addEventListener('mousedown',e=>{
-    e.preventDefault();
-    isDragging=true;
-    startX=e.pageX-(parseInt(item.style.left)||0);
-    startY=e.pageY-(parseInt(item.style.top)||0);
-    trash.style.display='flex';
-
-    activeDrag={
-      move(x,y){
-        item.style.left=x-startX+'px';
-        item.style.top=y-startY+'px';
-      },
-      stop(){
-        if(!isDragging) return;
-        const tr=trash.getBoundingClientRect();
-        const it=item.getBoundingClientRect();
-        if(it.right>tr.left && it.left<tr.right && it.bottom>tr.top && it.top<tr.bottom){
-          undoStack.push({src:img.src});
-          undoBtn.style.display='block';
-          item.remove();
-          images=images.filter(i=>i!==item);
-          saveLayout();
-          trash.style.display='none';
-          isDragging=false;
-          activeDrag=null;
-          return;
-        }
-        const colW=Math.floor(gallery.clientWidth/columns);
-        let col=Math.round(parseInt(item.style.left)/colW);
-        col=Math.max(0,Math.min(columns-1,col));
-        item.style.left=col*colW+'px';
-        reflowMasonry(item);
-        saveLayout();
-        trash.style.display='none';
-        isDragging=false;
-        activeDrag=null;
-      }
-    };
+    img.onload=reflowMasonry;
+    makeDeletable(item);
   });
 }
-
-window.addEventListener('mousemove',e=>activeDrag?.move(e.pageX,e.pageY));
-window.addEventListener('mouseup',()=>activeDrag?.stop());
 
 upload.onchange=e=>{
   [...e.target.files].forEach(f=>{
@@ -263,7 +184,7 @@ upload.onchange=e=>{
       item.appendChild(img);
       gallery.appendChild(item);
       images.push(item);
-      makeDraggable(item);
+      makeDeletable(item);
       reflowMasonry();
       saveLayout();
     };
@@ -271,24 +192,7 @@ upload.onchange=e=>{
   upload.value='';
 };
 
-undoBtn.onclick=()=>{
-  if(!undoStack.length) return;
-  const d=undoStack.pop();
-  const item=document.createElement('div');
-  item.className='item';
-  const img=new Image();
-  img.src=d.src;
-  item.appendChild(img);
-  gallery.appendChild(item);
-  images.push(item);
-  makeDraggable(item);
-  reflowMasonry();
-  saveLayout();
-  if(!undoStack.length) undoBtn.style.display='none';
-};
-
 boardSelect.onchange=()=>{
-  saveLayout();
   clearGallery();
   currentBoard=boardSelect.value;
   loadLayout();
@@ -337,8 +241,6 @@ document.getElementById('exportBtn').onclick=async()=>{
   a.click();
   document.body.removeChild(clone);
 };
-
-document.getElementById('publishBtn').onclick=()=>alert('Publish not implemented');
 
 refreshBoardUI();
 loadLayout();
