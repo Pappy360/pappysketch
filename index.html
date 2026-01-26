@@ -55,6 +55,35 @@ header{
   -webkit-user-drag:none;
 }
 #menu{display:none;margin-top:6px;}
+
+/* ===== LIGHTBOX ===== */
+#lightbox{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.6);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  z-index:2000;
+}
+#lightbox img{
+  max-width:90vw;
+  max-height:90vh;
+  border-radius:12px;
+  box-shadow:0 20px 60px rgba(0,0,0,0.4);
+}
+#deleteBtn{
+  position:absolute;
+  top:20px;
+  right:20px;
+  padding:10px 14px;
+  border-radius:10px;
+  border:none;
+  background:#ff3b30;
+  color:white;
+  font-weight:600;
+  cursor:pointer;
+}
 </style>
 </head>
 
@@ -75,6 +104,12 @@ header{
 
 <div class="gallery" id="gallery"></div>
 
+<!-- LIGHTBOX -->
+<div id="lightbox">
+  <button id="deleteBtn">Delete</button>
+  <img id="lightboxImg">
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script>
 const gallery = document.getElementById('gallery');
@@ -83,7 +118,12 @@ const boardSelect = document.getElementById('boardSelect');
 const menuToggle = document.getElementById('menuToggle');
 const menu = document.getElementById('menu');
 
+const lightbox = document.getElementById('lightbox');
+const lightboxImg = document.getElementById('lightboxImg');
+const deleteBtn = document.getElementById('deleteBtn');
+
 let images = [];
+let activeItem = null;
 const columns = 3;
 
 let boards = JSON.parse(localStorage.getItem('pappysketch-boards') || '["Main"]');
@@ -108,16 +148,13 @@ function refreshBoardUI(){
 }
 
 function updateGalleryHeight(){
-  gallery.style.height = Math.max(
-    ...images.map(i=>i.offsetTop+i.offsetHeight),
-    0
-  )+'px';
+  gallery.style.height=Math.max(...images.map(i=>i.offsetTop+i.offsetHeight),0)+'px';
 }
 
 function reflowMasonry(){
-  const w = gallery.clientWidth;
-  const colW = Math.floor(w/columns);
-  const heights = new Array(columns).fill(0);
+  const w=gallery.clientWidth;
+  const colW=Math.floor(w/columns);
+  const heights=new Array(columns).fill(0);
 
   images.forEach(item=>{
     const img=item.querySelector('img');
@@ -129,16 +166,13 @@ function reflowMasonry(){
     item.style.top=heights[col]+'px';
     heights[col]+=img.offsetHeight;
   });
-
   updateGalleryHeight();
 }
 
 function saveLayout(){
   localStorage.setItem(
     boardKey(currentBoard),
-    JSON.stringify(images.map(i=>({
-      src:i.querySelector('img').src
-    })))
+    JSON.stringify(images.map(i=>({src:i.querySelector('img').src})))
   );
 }
 
@@ -147,14 +181,12 @@ function clearGallery(){
   images=[];
 }
 
-function makeDeletable(item){
+function makePreviewable(item){
   const img=item.querySelector('img');
   img.onclick=()=>{
-    if(!confirm('Delete this image?')) return;
-    item.remove();
-    images=images.filter(i=>i!==item);
-    reflowMasonry();
-    saveLayout();
+    activeItem=item;
+    lightboxImg.src=img.src;
+    lightbox.style.display='flex';
   };
 }
 
@@ -169,7 +201,7 @@ function loadLayout(){
     gallery.appendChild(item);
     images.push(item);
     img.onload=reflowMasonry;
-    makeDeletable(item);
+    makePreviewable(item);
   });
 }
 
@@ -184,7 +216,7 @@ upload.onchange=e=>{
       item.appendChild(img);
       gallery.appendChild(item);
       images.push(item);
-      makeDeletable(item);
+      makePreviewable(item);
       reflowMasonry();
       saveLayout();
     };
@@ -224,6 +256,31 @@ document.getElementById('deleteBoard').onclick=()=>{
 menuToggle.onclick=()=>menu.style.display=menu.style.display==='block'?'none':'block';
 window.addEventListener('click',e=>{
   if(!menu.contains(e.target)&&e.target!==menuToggle) menu.style.display='none';
+});
+
+/* LIGHTBOX CONTROLS */
+lightbox.onclick=e=>{
+  if(e.target===lightbox){
+    lightbox.style.display='none';
+    activeItem=null;
+  }
+};
+
+deleteBtn.onclick=()=>{
+  if(!activeItem) return;
+  activeItem.remove();
+  images=images.filter(i=>i!==activeItem);
+  activeItem=null;
+  lightbox.style.display='none';
+  reflowMasonry();
+  saveLayout();
+};
+
+window.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    lightbox.style.display='none';
+    activeItem=null;
+  }
 });
 
 document.getElementById('exportBtn').onclick=async()=>{
