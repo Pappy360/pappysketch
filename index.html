@@ -54,21 +54,43 @@ header{
   -webkit-user-drag:none;
 }
 
-/* LIGHTBOX */
-#lightbox{
-  position:fixed;
-  inset:0;
-  background:rgba(0,0,0,0.6);
-  display:none;
-  align-items:center;
-  justify-content:center;
-  z-index:2000;
+/* -------------------- LIGHTBOX -------------------- */
+#lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
-#lightbox img{
-  max-width:90vw;
-  max-height:90vh;
-  border-radius:12px;
+#lightbox.show { display: flex; opacity: 1; }
+
+#lightbox img {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 12px;
+  transition: transform 0.3s ease;
+  cursor: grab;
 }
+#lightbox img:active { cursor: grabbing; }
+
+#prevBtn,#nextBtn{
+  position:absolute;
+  top:50%;
+  transform:translateY(-50%);
+  font-size:40px;
+  background:none;
+  border:none;
+  color:white;
+  cursor:pointer;
+  user-select:none;
+}
+#prevBtn{ left:20px; }
+#nextBtn{ right:20px; }
+
 #deleteBtn{
   position:absolute;
   top:20px;
@@ -101,27 +123,23 @@ header{
 
 <div class="gallery" id="gallery"></div>
 
+<!-- Fully upgraded lightbox -->
 <div id="lightbox">
-  <button id="deleteBtn">Delete</button>
+  <button id="prevBtn">‹</button>
   <img id="lightboxImg" />
+  <button id="nextBtn">›</button>
+  <button id="deleteBtn">Delete</button>
 </div>
 
 <script>
-/* -------------------- DB SETUP -------------------- */
+/* -------------------- DATABASE SETUP -------------------- */
 let db;
 const request = indexedDB.open('PappyBookDB', 1);
-
 request.onupgradeneeded = e => {
   db = e.target.result;
-  if (!db.objectStoreNames.contains('images')) {
-    db.createObjectStore('images', { keyPath: 'id' });
-  }
+  if(!db.objectStoreNames.contains('images')) db.createObjectStore('images',{keyPath:'id'});
 };
-
-request.onsuccess = e => {
-  db = e.target.result;
-  init();
-};
+request.onsuccess = e => { db = e.target.result; init(); };
 
 /* -------------------- STATE -------------------- */
 const gallery = document.getElementById('gallery');
@@ -132,35 +150,30 @@ const menu = document.getElementById('menu');
 
 const lightbox = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightboxImg');
+const prevBtn = document.getElementById('prevBtn');
+const nextBtn = document.getElementById('nextBtn');
 const deleteBtn = document.getElementById('deleteBtn');
 
 let images = [];
 let activeItem = null;
+let activeURL = null;
 const columns = 3;
 
 let boards = JSON.parse(localStorage.getItem('pappysketch-boards') || '["Main"]');
 let currentBoard = localStorage.getItem('pappysketch-current') || boards[0];
 
-const boardKey = b => `pappysketch-board-${b}`;
+const boardKey = b=>`pappysketch-board-${b}`;
 
 /* -------------------- INIT -------------------- */
-function init(){
-  refreshBoardUI();
-  loadLayout();
-}
-
-/* -------------------- BOARD UI -------------------- */
+function init(){ refreshBoardUI(); loadLayout(); }
 function refreshBoardUI(){
   boardSelect.innerHTML='';
   boards.forEach(b=>{
-    const o=document.createElement('option');
-    o.value=b;
-    o.textContent=b;
+    const o=document.createElement('option'); o.value=b; o.textContent=b;
     if(b===currentBoard) o.selected=true;
     boardSelect.appendChild(o);
   });
 }
-
 function saveBoards(){
   localStorage.setItem('pappysketch-boards',JSON.stringify(boards));
   localStorage.setItem('pappysketch-current',currentBoard);
@@ -168,55 +181,37 @@ function saveBoards(){
 
 /* -------------------- LAYOUT -------------------- */
 function reflowMasonry(){
-  const colW = Math.floor(gallery.clientWidth / columns);
-  const heights = new Array(columns).fill(0);
-
+  const colW = Math.floor(gallery.clientWidth/columns);
+  const heights = Array(columns).fill(0);
   images.forEach(item=>{
-    const img=item.querySelector('img');
-    const ratio=img.naturalHeight/img.naturalWidth;
-    img.style.width=colW+'px';
-    img.style.height=colW*ratio+'px';
-    const col=heights.indexOf(Math.min(...heights));
-    item.style.left=col*colW+'px';
-    item.style.top=heights[col]+'px';
-    heights[col]+=img.offsetHeight;
+    const img = item.querySelector('img');
+    const ratio = img.naturalHeight / img.naturalWidth;
+    img.style.width = colW+'px';
+    img.style.height = colW*ratio+'px';
+    const col = heights.indexOf(Math.min(...heights));
+    item.style.left = col*colW+'px';
+    item.style.top = heights[col]+'px';
+    heights[col] += img.offsetHeight;
   });
-
   gallery.style.height=Math.max(...heights,0)+'px';
 }
-
-/* -------------------- SAVE / LOAD -------------------- */
 function saveLayout(){
-  localStorage.setItem(
-    boardKey(currentBoard),
-    JSON.stringify(images.map(i=>({id:i.dataset.id})))
-  );
+  localStorage.setItem(boardKey(currentBoard),JSON.stringify(images.map(i=>({id:i.dataset.id}))));
 }
-
-function clearGallery(){
-  gallery.innerHTML='';
-  images=[];
-}
-
+function clearGallery(){ gallery.innerHTML=''; images=[]; }
 function loadLayout(){
   clearGallery();
-  const saved=JSON.parse(localStorage.getItem(boardKey(currentBoard))||'[]');
-  const tx=db.transaction('images','readonly');
-  const store=tx.objectStore('images');
-
+  const saved = JSON.parse(localStorage.getItem(boardKey(currentBoard))||'[]');
+  const tx = db.transaction('images','readonly'); const store = tx.objectStore('images');
   saved.forEach(({id})=>{
-    const req=store.get(id);
-    req.onsuccess=()=>{
+    const req = store.get(id);
+    req.onsuccess = ()=>{
       if(!req.result) return;
-      const item=document.createElement('div');
-      item.className='item';
-      item.dataset.id=id;
-
-      const img=new Image();
-      const url=URL.createObjectURL(req.result.blob);
-      img.src=url;
-      img.onload=()=>{URL.revokeObjectURL(url);reflowMasonry();};
-
+      const item=document.createElement('div'); item.className='item'; item.dataset.id=id;
+      const img = new Image();
+      const url = URL.createObjectURL(req.result.blob);
+      img.src = url;
+      img.onload = ()=>{ URL.revokeObjectURL(url); reflowMasonry(); };
       item.appendChild(img);
       gallery.appendChild(item);
       images.push(item);
@@ -226,103 +221,113 @@ function loadLayout(){
 }
 
 /* -------------------- UPLOAD -------------------- */
-upload.onchange=e=>{
+upload.onchange = e=>{
   [...e.target.files].forEach(file=>{
-    const id=crypto.randomUUID();
-    const tx=db.transaction('images','readwrite');
-    tx.objectStore('images').put({id,blob:file});
-
-    const item=document.createElement('div');
-    item.className='item';
-    item.dataset.id=id;
-
-    const img=new Image();
-    const url=URL.createObjectURL(file);
+    const id = crypto.randomUUID();
+    db.transaction('images','readwrite').objectStore('images').put({id,blob:file});
+    const item=document.createElement('div'); item.className='item'; item.dataset.id=id;
+    const img = new Image();
+    const url = URL.createObjectURL(file);
     img.src=url;
-    img.onload=()=>{URL.revokeObjectURL(url);reflowMasonry();saveLayout();};
-
-    item.appendChild(img);
-    gallery.appendChild(item);
-    images.push(item);
+    img.onload=()=>{ URL.revokeObjectURL(url); reflowMasonry(); saveLayout(); };
+    item.appendChild(img); gallery.appendChild(item); images.push(item);
     makePreviewable(item);
   });
   upload.value='';
 };
 
-/* -------------------- LIGHTBOX (FIXED) -------------------- */
-function loadImageFromDB(id, cb){
-  const tx=db.transaction('images','readonly');
-  const store=tx.objectStore('images');
-  const req=store.get(id);
-  req.onsuccess=()=>{
+/* -------------------- LIGHTBOX -------------------- */
+let scale=1,originX=0,originY=0,startX=0,startY=0,isDragging=false;
+let touchStartDist=0,initialScale=1,touchStartX=0,touchStartY=0,isTouchDragging=false;
+
+function loadImageFromDB(id){
+  const tx = db.transaction('images','readonly');
+  const store = tx.objectStore('images');
+  const req = store.get(id);
+  req.onsuccess = ()=>{
     if(!req.result) return;
-    const url=URL.createObjectURL(req.result.blob);
-    cb(url);
+    if(activeURL) URL.revokeObjectURL(activeURL);
+    activeURL = URL.createObjectURL(req.result.blob);
+    lightboxImg.src = activeURL;
+    scale=1; originX=0; originY=0; lightboxImg.style.transform='';
   };
 }
 
-function makePreviewable(item){
-  item.querySelector('img').onclick=()=>{
-    activeItem=item;
-    loadImageFromDB(item.dataset.id,url=>{
-      lightboxImg.src=url;
-      lightbox.style.display='flex';
-      lightboxImg.onload=()=>URL.revokeObjectURL(url);
-    });
-  };
-}
+function openLightbox(item){ activeItem=item; loadImageFromDB(item.dataset.id); lightbox.classList.add('show'); }
+function closeLightbox(){ lightbox.classList.remove('show'); if(activeURL) URL.revokeObjectURL(activeURL); activeURL=null; activeItem=null; lightboxImg.src=''; scale=1; originX=0; originY=0; lightboxImg.style.transform=''; }
+function showNext(dir){ if(!activeItem) return; const idx=images.indexOf(activeItem); const nextIdx=(idx+dir+images.length)%images.length; activeItem=images[nextIdx]; loadImageFromDB(activeItem.dataset.id); }
+function makePreviewable(item){ item.querySelector('img').onclick=()=>openLightbox(item); }
 
-lightbox.onclick=e=>{
-  if(e.target===lightbox){
-    lightbox.style.display='none';
-    activeItem=null;
-  }
-};
-
+prevBtn.onclick=e=>{ e.stopPropagation(); showNext(-1); };
+nextBtn.onclick=e=>{ e.stopPropagation(); showNext(1); };
+lightbox.onclick=e=>{ if(e.target===lightbox) closeLightbox(); };
+document.addEventListener('keydown',e=>{
+  if(!lightbox.classList.contains('show')) return;
+  if(e.key==='ArrowRight') showNext(1);
+  if(e.key==='ArrowLeft') showNext(-1);
+  if(e.key==='Escape') closeLightbox();
+});
 deleteBtn.onclick=()=>{
   if(!activeItem) return;
   const id=activeItem.dataset.id;
   db.transaction('images','readwrite').objectStore('images').delete(id);
-  activeItem.remove();
-  images=images.filter(i=>i!==activeItem);
-  activeItem=null;
-  lightbox.style.display='none';
-  reflowMasonry();
-  saveLayout();
+  activeItem.remove(); images=images.filter(i=>i!==activeItem);
+  activeItem=null; closeLightbox(); reflowMasonry(); saveLayout();
 };
+
+/* -------------------- DESKTOP DRAG & WHEEL ZOOM -------------------- */
+lightboxImg.addEventListener('mousedown',e=>{ isDragging=true; startX=e.clientX-originX; startY=e.clientY-originY; });
+document.addEventListener('mousemove',e=>{ if(!isDragging) return; originX=e.clientX-startX; originY=e.clientY-startY; lightboxImg.style.transform=`translate(${originX}px,${originY}px) scale(${scale})`; });
+document.addEventListener('mouseup',()=>isDragging=false);
+lightboxImg.addEventListener('wheel',e=>{ e.preventDefault(); scale+=e.deltaY*-0.001; scale=Math.min(Math.max(.5,scale),3); lightboxImg.style.transform=`translate(${originX}px,${originY}px) scale(${scale})`; });
+
+/* -------------------- MOBILE PINCH & SWIPE -------------------- */
+lightboxImg.addEventListener('touchstart',e=>{
+  if(e.touches.length===2){
+    const dx=e.touches[0].clientX-e.touches[1].clientX;
+    const dy=e.touches[0].clientY-e.touches[1].clientY;
+    touchStartDist=Math.hypot(dx,dy);
+    initialScale=scale;
+  } else if(e.touches.length===1){
+    isTouchDragging=true; touchStartX=e.touches[0].clientX-originX; touchStartY=e.touches[0].clientY-originY;
+  }
+});
+lightboxImg.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  if(e.touches.length===2){
+    const dx=e.touches[0].clientX-e.touches[1].clientX;
+    const dy=e.touches[0].clientY-e.touches[1].clientY;
+    const dist=Math.hypot(dx,dy);
+    scale=initialScale*(dist/touchStartDist);
+    scale=Math.min(Math.max(.5,scale),3);
+    lightboxImg.style.transform=`translate(${originX}px,${originY}px) scale(${scale})`;
+  } else if(e.touches.length===1 && isTouchDragging){
+    originX=e.touches[0].clientX-touchStartX; originY=e.touches[0].clientY-touchStartY;
+    lightboxImg.style.transform=`translate(${originX}px,${originY}px) scale(${scale})`;
+  }
+});
+lightboxImg.addEventListener('touchend',e=>{
+  if(e.touches.length===0) isTouchDragging=false;
+  if(e.changedTouches.length===1){
+    const deltaX=e.changedTouches[0].clientX-touchStartX;
+    if(Math.abs(deltaX)>50) showNext(deltaX<0?1:-1);
+  }
+});
 
 /* -------------------- MENU & BOARDS -------------------- */
 menuToggle.onclick=()=>menu.style.display=menu.style.display==='block'?'none':'block';
+window.addEventListener('click',e=>{ if(!menu.contains(e.target)&&e.target!==menuToggle) menu.style.display='none'; });
 
-window.addEventListener('click',e=>{
-  if(!menu.contains(e.target)&&e.target!==menuToggle) menu.style.display='none';
-});
-
-boardSelect.onchange=()=>{
-  currentBoard=boardSelect.value;
-  saveBoards();
-  loadLayout();
-};
-
+boardSelect.onchange=()=>{ currentBoard=boardSelect.value; saveBoards(); loadLayout(); };
 document.getElementById('newBoard').onclick=()=>{
-  const n=prompt('Board name');
-  if(!n) return;
-  boards.push(n);
-  currentBoard=n;
-  saveBoards();
-  refreshBoardUI();
-  clearGallery();
+  const n=prompt('Board name'); if(!n) return; boards.push(n); currentBoard=n; saveBoards(); refreshBoardUI(); clearGallery();
 };
-
 document.getElementById('deleteBoard').onclick=()=>{
   if(boards.length<=1) return alert('Cannot delete last board');
   if(!confirm(`Delete "${currentBoard}"?`)) return;
   localStorage.removeItem(boardKey(currentBoard));
-  boards=boards.filter(b=>b!==currentBoard);
-  currentBoard=boards[0];
-  saveBoards();
-  refreshBoardUI();
-  loadLayout();
+  boards=boards.filter(b=>b!==currentBoard); currentBoard=boards[0];
+  saveBoards(); refreshBoardUI(); loadLayout();
 };
 </script>
 
