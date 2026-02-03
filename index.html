@@ -75,18 +75,17 @@ header{
 <script type="module">
 
 /* ---------------- FIREBASE ---------------- */
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-auth.js";
 import { getFirestore, collection, addDoc, getDocs, query, where, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-storage.js";
 
-/* YOUR CONFIG */
+/* ---------------- FIREBASE CONFIG (SAFE) ---------------- */
 const firebaseConfig = {
-  apiKey: "AIzaSyA0wLiGL0QvrZsqOJFQjZt4bGn4ADvCxMI",
+  apiKey: "AIzaSyDxCfQCSL7i4t8eyoAI-m62Cw_nFxZtwDY",  // replace with your new key
   authDomain: "pappybook-8fd04.firebaseapp.com",
   projectId: "pappybook-8fd04",
-  storageBucket: "pappybook-8fd04.firebasestorage.app",
+  storageBucket: "pappybook-8fd04.appspot.com", // ✅ corrected
   messagingSenderId: "393473652895",
   appId: "1:393473652895:web:e56ad1294fe3b6a61ccaaa"
 };
@@ -97,7 +96,6 @@ const db = getFirestore();
 const storage = getStorage();
 
 /* ---------------- STATE ---------------- */
-
 const gallery = document.getElementById('gallery');
 const upload = document.getElementById('upload');
 const boardSelect = document.getElementById('boardSelect');
@@ -108,91 +106,87 @@ let images = [];
 const columns = 3;
 
 /* ---------------- LOGIN ---------------- */
-
 const loginBtn = document.getElementById("loginBtn");
 
-loginBtn.onclick = async ()=>{
+loginBtn.onclick = async () => {
   const provider = new GoogleAuthProvider();
   await signInWithPopup(auth, provider);
   alert("Logged in!");
 };
 
 /* ---------------- BOARDS ---------------- */
-
-function refreshBoards(){
-  boardSelect.innerHTML="";
-  boards.forEach(b=>{
-    const opt=document.createElement("option");
-    opt.textContent=b;
-    opt.value=b;
+function refreshBoards() {
+  boardSelect.innerHTML = "";
+  boards.forEach(b => {
+    const opt = document.createElement("option");
+    opt.textContent = b;
+    opt.value = b;
     boardSelect.appendChild(opt);
   });
 }
 
-document.getElementById("newBoard").onclick=()=>{
-  const n=prompt("Board name");
+document.getElementById("newBoard").onclick = () => {
+  const n = prompt("Board name");
   if(!n) return;
   boards.push(n);
   refreshBoards();
 };
 
-document.getElementById("deleteBoard").onclick=()=>{
-  if(boards.length<=1) return;
-  boards=boards.filter(b=>b!==currentBoard);
-  currentBoard=boards[0];
+document.getElementById("deleteBoard").onclick = () => {
+  if(boards.length <= 1) return;
+  boards = boards.filter(b => b !== currentBoard);
+  currentBoard = boards[0];
   refreshBoards();
   loadImages();
 };
 
-boardSelect.onchange=()=>{
-  currentBoard=boardSelect.value;
+boardSelect.onchange = () => {
+  currentBoard = boardSelect.value;
   loadImages();
 };
 
 refreshBoards();
 
 /* ---------------- LAYOUT ---------------- */
-
-function reflow(){
-  const colW = Math.floor(gallery.clientWidth/columns);
+function reflow() {
+  const colW = Math.floor(gallery.clientWidth / columns);
   const heights = Array(columns).fill(0);
 
-  images.forEach(item=>{
-    const img=item.querySelector("img");
+  images.forEach(item => {
+    const img = item.querySelector("img");
     const ratio = img.naturalHeight / img.naturalWidth;
 
-    img.style.width = colW+"px";
-    img.style.height = colW*ratio+"px";
+    img.style.width = colW + "px";
+    img.style.height = colW * ratio + "px";
 
     const col = heights.indexOf(Math.min(...heights));
-    item.style.left = col*colW+"px";
-    item.style.top = heights[col]+"px";
+    item.style.left = col * colW + "px";
+    item.style.top = heights[col] + "px";
 
-    heights[col]+=img.offsetHeight;
+    heights[col] += img.offsetHeight;
   });
 
-  gallery.style.height=Math.max(...heights)+"px";
+  gallery.style.height = Math.max(...heights) + "px";
 }
 
 /* ---------------- LOAD IMAGES ---------------- */
+async function loadImages() {
+  gallery.innerHTML = "";
+  images = [];
 
-async function loadImages(){
-  gallery.innerHTML="";
-  images=[];
-
-  const q = query(collection(db,"images"), where("board","==",currentBoard));
+  const q = query(collection(db, "images"), where("board", "==", currentBoard));
   const snap = await getDocs(q);
 
-  snap.forEach(docu=>{
+  snap.forEach(docu => {
     const data = docu.data();
 
-    const item=document.createElement("div");
-    item.className="item";
+    const item = document.createElement("div");
+    item.className = "item";
 
     const img = new Image();
-    img.src=data.url;
+    img.src = data.url;
 
-    img.onload=()=>{
+    img.onload = () => {
       reflow();
     };
 
@@ -201,12 +195,12 @@ async function loadImages(){
 
     images.push(item);
 
-    item.onclick=async()=>{
-      if(auth.currentUser?.uid!==data.owner) return;
+    item.onclick = async () => {
+      if(auth.currentUser?.uid !== data.owner) return;
 
-      if(confirm("Delete image?")){
-        await deleteDoc(doc(db,"images",docu.id));
-        await deleteObject(ref(storage,data.path));
+      if(confirm("Delete image?")) {
+        await deleteDoc(doc(db, "images", docu.id));
+        await deleteObject(ref(storage, data.path));
         loadImages();
       }
     };
@@ -214,29 +208,25 @@ async function loadImages(){
 }
 
 /* ---------------- UPLOAD ---------------- */
-
-upload.onchange = async e=>{
-
+upload.onchange = async e => {
   if(!auth.currentUser){
     alert("Login first!");
     return;
   }
 
   for(const file of e.target.files){
-
     const path = `images/${crypto.randomUUID()}-${file.name}`;
-    const storageRef = ref(storage,path);
+    const storageRef = ref(storage, path);
 
-    await uploadBytes(storageRef,file);
+    await uploadBytes(storageRef, file);
     const url = await getDownloadURL(storageRef);
 
-    await addDoc(collection(db,"images"),{
+    await addDoc(collection(db, "images"), {
       url,
       path,
-      board:currentBoard,
-      owner:auth.currentUser.uid
+      board: currentBoard,
+      owner: auth.currentUser.uid
     });
-
   }
 
   loadImages();
@@ -245,12 +235,11 @@ upload.onchange = async e=>{
 loadImages();
 
 /* ---------------- MENU ---------------- */
-
 const menuToggle = document.getElementById("menuToggle");
 const menu = document.getElementById("menu");
 
-menuToggle.onclick=()=>{
-  menu.style.display = menu.style.display==="block"?"none":"block";
+menuToggle.onclick = () => {
+  menu.style.display = menu.style.display === "block" ? "none" : "block";
 };
 
 </script>
