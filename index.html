@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PappySketch Smart Canvas</title>
+
 <style>
 body{
   margin:0;
@@ -54,7 +55,6 @@ header{
 }
 #menu{display:none;margin-top:6px;}
 
-/* LIGHTBOX */
 #lightbox{
   position:fixed;
   inset:0;
@@ -68,7 +68,6 @@ header{
   max-width:90vw;
   max-height:90vh;
   border-radius:12px;
-  box-shadow:0 20px 60px rgba(0,0,0,0.4);
 }
 #deleteBtn{
   position:absolute;
@@ -80,10 +79,10 @@ header{
   border-radius:8px;
   padding:6px 12px;
   cursor:pointer;
-  font-weight:600;
 }
 </style>
 </head>
+
 <body>
 
 <header>PappySketch Smart Canvas</header>
@@ -101,15 +100,15 @@ header{
 
 <div class="gallery" id="gallery"></div>
 
-<!-- LIGHTBOX -->
 <div id="lightbox">
   <button id="deleteBtn">Delete</button>
-  <img id="lightboxImg" />
+  <img id="lightboxImg">
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
 <script>
-/* ---------------- STATE ---------------- */
+/* ---------- STATE ---------- */
 const gallery = document.getElementById('gallery');
 const upload = document.getElementById('upload');
 const boardSelect = document.getElementById('boardSelect');
@@ -125,16 +124,30 @@ let images = [];
 const columns = 3;
 let activeItem = null;
 
-/* ----------------- UTILS ----------------- */
+/* ---------- HELPERS ---------- */
+function fileToBase64(file){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function boardKey(b){ return `board-${b}`; }
+
 function saveBoards(){
   localStorage.setItem('boards', JSON.stringify(boards));
   localStorage.setItem('currentBoard', currentBoard);
 }
-function boardKey(b){ return `board-${b}`; }
+
 function saveLayout(){
-  const data = images.map(i=>({src:i.querySelector('img').src}));
+  const data = images.map(i=>({
+    src: i.querySelector('img').src
+  }));
   localStorage.setItem(boardKey(currentBoard), JSON.stringify(data));
 }
+
 function loadLayout(){
   gallery.innerHTML='';
   images=[];
@@ -152,7 +165,7 @@ function loadLayout(){
   });
 }
 
-/* ----------------- BOARDS ----------------- */
+/* ---------- UI ---------- */
 function refreshBoardUI(){
   boardSelect.innerHTML='';
   boards.forEach(b=>{
@@ -163,7 +176,7 @@ function refreshBoardUI(){
   boardSelect.value = currentBoard;
 }
 
-/* ----------------- MASONRY LAYOUT ----------------- */
+/* ---------- LAYOUT ---------- */
 function reflowMasonry(){
   const w = gallery.clientWidth;
   const colW = Math.floor(w / columns);
@@ -182,38 +195,46 @@ function reflowMasonry(){
   gallery.style.height = Math.max(...heights)+'px';
 }
 
-/* ----------------- IMAGE PREVIEW ----------------- */
+/* ---------- PREVIEW ---------- */
 function makePreviewable(item){
   item.querySelector('img').onclick = ()=>{
     activeItem = item;
     lightboxImg.src = item.querySelector('img').src;
-    lightbox.style.display = 'flex';
+    lightbox.style.display='flex';
   };
 }
 
-/* ----------------- UPLOAD ----------------- */
-upload.onchange = e=>{
-  [...e.target.files].forEach(file=>{
+/* ---------- UPLOAD (FIXED) ---------- */
+upload.onchange = async e=>{
+  for(const file of e.target.files){
+    const base64 = await fileToBase64(file);
+
     const item = document.createElement('div');
     item.className='item';
+
     const img = new Image();
-    img.src = URL.createObjectURL(file);
-    img.onload = ()=>{ URL.revokeObjectURL(img.src); reflowMasonry(); saveLayout(); };
+    img.src = base64;
+    img.onload = ()=>{
+      reflowMasonry();
+      saveLayout();
+    };
+
     item.appendChild(img);
     gallery.appendChild(item);
     images.push(item);
     makePreviewable(item);
-  });
+  }
   upload.value='';
 };
 
-/* ----------------- LIGHTBOX ----------------- */
+/* ---------- LIGHTBOX ---------- */
 lightbox.onclick = e=>{
   if(e.target === lightbox){
     lightbox.style.display='none';
     activeItem=null;
   }
 };
+
 deleteBtn.onclick = ()=>{
   if(!activeItem) return;
   activeItem.remove();
@@ -224,18 +245,16 @@ deleteBtn.onclick = ()=>{
   saveLayout();
 };
 
-/* ----------------- MENU ----------------- */
+/* ---------- MENU ---------- */
 menuToggle.onclick = ()=>menu.style.display = menu.style.display==='block'?'none':'block';
-window.addEventListener('click', e=>{
-  if(!menu.contains(e.target) && e.target!==menuToggle) menu.style.display='none';
-});
 
-/* ----------------- BOARD EVENTS ----------------- */
+/* ---------- BOARDS ---------- */
 boardSelect.onchange = ()=>{
   currentBoard = boardSelect.value;
   saveBoards();
   loadLayout();
 };
+
 document.getElementById('newBoard').onclick = ()=>{
   const name = prompt('Board name');
   if(!name) return;
@@ -245,6 +264,7 @@ document.getElementById('newBoard').onclick = ()=>{
   refreshBoardUI();
   loadLayout();
 };
+
 document.getElementById('deleteBoard').onclick = ()=>{
   if(boards.length<=1) return;
   boards = boards.filter(b=>b!==currentBoard);
@@ -254,9 +274,9 @@ document.getElementById('deleteBoard').onclick = ()=>{
   loadLayout();
 };
 
-/* ----------------- EXPORT ----------------- */
+/* ---------- EXPORT ---------- */
 document.getElementById('exportBtn').onclick = async()=>{
-  if(!images.length) return alert('No images to export');
+  if(!images.length) return alert('No images');
   const clone = gallery.cloneNode(true);
   clone.style.position='absolute';
   clone.style.left='0';
@@ -271,7 +291,7 @@ document.getElementById('exportBtn').onclick = async()=>{
   document.body.removeChild(clone);
 };
 
-/* ----------------- INIT ----------------- */
+/* ---------- INIT ---------- */
 refreshBoardUI();
 loadLayout();
 </script>
