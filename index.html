@@ -3,8 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>PappySketch Smart Canvas</title>
 
 <style>
@@ -12,185 +10,171 @@ body{
   margin:0;
   font-family:-apple-system,BlinkMacSystemFont,sans-serif;
   background:#f5f5f7;
-  overflow-y:auto;
 }
 header{
   height:60px;
-@@ -50,13 +49,12 @@
+  background:#fff;
+  display:flex;
+  align-items:center;
+  padding:0 12px;
+  box-shadow:0 2px 8px rgba(0,0,0,0.08);
+}
+.gallery{
+  position:relative;
+}
+.item{
+  position:absolute;
 }
 .item img{
   width:100%;
-  cursor:pointer;
-  user-select:none;
   cursor:pointer;
   -webkit-user-drag:none;
 }
 #menu{display:none;margin-top:6px;}
 
-/* ===== LIGHTBOX ===== */
-/* LIGHTBOX */
 #lightbox{
   position:fixed;
   inset:0;
-@@ -70,7 +68,6 @@
+  background:rgba(0,0,0,0.85);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  z-index:1000;
+}
+#lightbox img{
   max-width:90vw;
   max-height:90vh;
   border-radius:12px;
-  box-shadow:0 20px 60px rgba(0,0,0,0.4);
 }
 #deleteBtn{
   position:absolute;
-@@ -84,6 +81,7 @@
-  font-weight:600;
+  top:20px;
+  right:20px;
+  background:red;
+  color:white;
+  border:none;
+  padding:8px 12px;
+  border-radius:6px;
   cursor:pointer;
 }
-#menu{display:none;}
 </style>
 </head>
 
-@@ -97,21 +95,33 @@
+<body>
+
+<header>
+  <button id="menuToggle">☰</button>
+  <div id="menu">
     <select id="boardSelect"></select>
     <button id="newBoard">Add Board</button>
     <button id="deleteBoard">Delete Board</button>
     <input type="file" id="upload" multiple>
     <button id="exportBtn">Export PNG</button>
-    <input type="file" id="upload" multiple />
   </div>
-</div>
+</header>
 
 <div class="gallery" id="gallery"></div>
 
-<!-- LIGHTBOX -->
 <div id="lightbox">
   <button id="deleteBtn">Delete</button>
   <img id="lightboxImg">
-  <img id="lightboxImg" />
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script>
-/* -------------------- DB SETUP -------------------- */
+/* ---------- DB ---------- */
 let db;
-const request = indexedDB.open('PappySketchDB', 1);
-
-request.onupgradeneeded = e => {
-  db = e.target.result;
-  db.createObjectStore('images', { keyPath: 'id' });
+const request=indexedDB.open('PappySketchDB',1);
+request.onupgradeneeded=e=>{
+  db=e.target.result;
+  db.createObjectStore('images',{keyPath:'id'});
 };
-
-request.onsuccess = e => {
-  db = e.target.result;
+request.onsuccess=e=>{
+  db=e.target.result;
   init();
 };
 
-/* -------------------- STATE -------------------- */
-const gallery = document.getElementById('gallery');
-const upload = document.getElementById('upload');
-const boardSelect = document.getElementById('boardSelect');
-@@ -129,13 +139,15 @@
-let boards = JSON.parse(localStorage.getItem('pappysketch-boards') || '["Main"]');
-let currentBoard = localStorage.getItem('pappysketch-current') || boards[0];
+/* ---------- STATE ---------- */
+const gallery=document.getElementById('gallery');
+const upload=document.getElementById('upload');
+const boardSelect=document.getElementById('boardSelect');
+const menuToggle=document.getElementById('menuToggle');
+const menu=document.getElementById('menu');
+const lightbox=document.getElementById('lightbox');
+const lightboxImg=document.getElementById('lightboxImg');
+const deleteBtn=document.getElementById('deleteBtn');
 
-function boardKey(b){ return `pappysketch-board-${b}`; }
-const boardKey = b => `pappysketch-board-${b}`;
+let images=[];
+let activeItem=null;
+const columns=3;
 
-function saveBoards(){
-  localStorage.setItem('pappysketch-boards',JSON.stringify(boards));
-  localStorage.setItem('pappysketch-current',currentBoard);
-/* -------------------- INIT -------------------- */
+let boards=JSON.parse(localStorage.getItem('pappysketch-boards')||'["Main"]');
+let currentBoard=localStorage.getItem('pappysketch-current')||boards[0];
+
+const boardKey=b=>`pappysketch-board-${b}`;
+
+/* ---------- INIT ---------- */
 function init(){
   refreshBoardUI();
   loadLayout();
 }
 
-/* -------------------- BOARD UI -------------------- */
-function refreshBoardUI(){
-  boardSelect.innerHTML='';
-  boards.forEach(b=>{
-@@ -147,32 +159,35 @@
-  });
-}
-
-function updateGalleryHeight(){
-  gallery.style.height=Math.max(...images.map(i=>i.offsetTop+i.offsetHeight),0)+'px';
+/* ---------- BOARDS ---------- */
 function saveBoards(){
   localStorage.setItem('pappysketch-boards',JSON.stringify(boards));
   localStorage.setItem('pappysketch-current',currentBoard);
 }
 
-/* -------------------- LAYOUT -------------------- */
-function reflowMasonry(){
+function refreshBoardUI(){
+  boardSelect.innerHTML='';
+  boards.forEach(b=>{
+    const o=document.createElement('option');
+    o.value=b;
+    o.textContent=b;
+    if(b===currentBoard) o.selected=true;
+    boardSelect.appendChild(o);
+  });
+}
+
+/* ---------- LAYOUT ---------- */
+function reflow(){
   const w=gallery.clientWidth;
   const colW=Math.floor(w/columns);
   const heights=new Array(columns).fill(0);
-  const colW = Math.floor(gallery.clientWidth / columns);
-  const heights = new Array(columns).fill(0);
 
   images.forEach(item=>{
     const img=item.querySelector('img');
-    const r=img.naturalHeight/img.naturalWidth;
     const ratio=img.naturalHeight/img.naturalWidth;
     img.style.width=colW+'px';
-    img.style.height=colW*r+'px';
     img.style.height=colW*ratio+'px';
     const col=heights.indexOf(Math.min(...heights));
     item.style.left=col*colW+'px';
     item.style.top=heights[col]+'px';
     heights[col]+=img.offsetHeight;
   });
-  updateGalleryHeight();
-
   gallery.style.height=Math.max(...heights,0)+'px';
 }
 
-/* -------------------- SAVE / LOAD -------------------- */
+/* ---------- SAVE / LOAD ---------- */
 function saveLayout(){
   localStorage.setItem(
     boardKey(currentBoard),
-    JSON.stringify(images.map(i=>({src:i.querySelector('img').src})))
     JSON.stringify(images.map(i=>({id:i.dataset.id})))
   );
 }
 
-@@ -181,54 +196,94 @@
+function clearGallery(){
+  gallery.innerHTML='';
   images=[];
-}
-
-function makePreviewable(item){
-  const img=item.querySelector('img');
-  img.onclick=()=>{
-    activeItem=item;
-    lightboxImg.src=img.src;
-    lightbox.style.display='flex';
-  };
 }
 
 function loadLayout(){
   clearGallery();
   const saved=JSON.parse(localStorage.getItem(boardKey(currentBoard))||'[]');
-  saved.forEach(d=>{
-    const item=document.createElement('div');
-    item.className='item';
-    const img=new Image();
-    img.src=d.src;
-    item.appendChild(img);
-    gallery.appendChild(item);
-    images.push(item);
-    img.onload=reflowMasonry;
-    makePreviewable(item);
-  });
-}
-  const tx=db.transaction('images','readonly');
-  const store=tx.objectStore('images');
+  const tx=db.transaction('images','readonly').objectStore('images');
 
-upload.onchange=e=>{
-  [...e.target.files].forEach(f=>{
-    const img=new Image();
-    img.src=URL.createObjectURL(f);
-    img.onload=()=>{
-      URL.revokeObjectURL(img.src);
   saved.forEach(({id})=>{
-    const req=store.get(id);
+    const req=tx.get(id);
     req.onsuccess=()=>{
       if(!req.result) return;
       const item=document.createElement('div');
@@ -199,24 +183,23 @@ upload.onchange=e=>{
 
       const img=new Image();
       img.src=URL.createObjectURL(req.result.blob);
-      img.onload=()=>{URL.revokeObjectURL(img.src);reflowMasonry();};
+      img.onload=()=>{URL.revokeObjectURL(img.src);reflow();};
 
       item.appendChild(img);
       gallery.appendChild(item);
       images.push(item);
       makePreviewable(item);
-      reflowMasonry();
-      saveLayout();
     };
   });
 }
 
-/* -------------------- UPLOAD -------------------- */
+/* ---------- UPLOAD ---------- */
 upload.onchange=e=>{
   [...e.target.files].forEach(file=>{
     const id=crypto.randomUUID();
-    const tx=db.transaction('images','readwrite');
-    tx.objectStore('images').put({id,blob:file});
+    db.transaction('images','readwrite')
+      .objectStore('images')
+      .put({id,blob:file});
 
     const item=document.createElement('div');
     item.className='item';
@@ -224,7 +207,7 @@ upload.onchange=e=>{
 
     const img=new Image();
     img.src=URL.createObjectURL(file);
-    img.onload=()=>{URL.revokeObjectURL(img.src);reflowMasonry();saveLayout();};
+    img.onload=()=>{URL.revokeObjectURL(img.src);reflow();saveLayout();};
 
     item.appendChild(img);
     gallery.appendChild(item);
@@ -234,7 +217,7 @@ upload.onchange=e=>{
   upload.value='';
 };
 
-/* -------------------- LIGHTBOX -------------------- */
+/* ---------- LIGHTBOX ---------- */
 function makePreviewable(item){
   item.querySelector('img').onclick=()=>{
     activeItem=item;
@@ -258,71 +241,28 @@ deleteBtn.onclick=()=>{
   images=images.filter(i=>i!==activeItem);
   activeItem=null;
   lightbox.style.display='none';
-  reflowMasonry();
+  reflow();
   saveLayout();
 };
 
-/* -------------------- MENU & BOARDS -------------------- */
-menuToggle.onclick=()=>menu.style.display=menu.style.display==='block'?'none':'block';
-
-window.addEventListener('click',e=>{
-  if(!menu.contains(e.target)&&e.target!==menuToggle) menu.style.display='none';
-});
+/* ---------- MENU ---------- */
+menuToggle.onclick=()=>{
+  menu.style.display=menu.style.display==='block'?'none':'block';
+};
 
 boardSelect.onchange=()=>{
-  clearGallery();
   currentBoard=boardSelect.value;
-  loadLayout();
   saveBoards();
   loadLayout();
 };
 
-document.getElementById('newBoard').onclick=()=>{
-@@ -249,58 +304,9 @@
-  currentBoard=boards[0];
-  saveBoards();
-  refreshBoardUI();
-  clearGallery();
-  loadLayout();
-};
-
-menuToggle.onclick=()=>menu.style.display=menu.style.display==='block'?'none':'block';
-window.addEventListener('click',e=>{
-  if(!menu.contains(e.target)&&e.target!==menuToggle) menu.style.display='none';
-});
-
-/* LIGHTBOX CONTROLS */
-lightbox.onclick=e=>{
-  if(e.target===lightbox){
-    lightbox.style.display='none';
-    activeItem=null;
-  }
-};
-
-deleteBtn.onclick=()=>{
-  if(!activeItem) return;
-  activeItem.remove();
-  images=images.filter(i=>i!==activeItem);
-  activeItem=null;
-  lightbox.style.display='none';
-  reflowMasonry();
-  saveLayout();
-};
-
-window.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){
-    lightbox.style.display='none';
-    activeItem=null;
-  }
-});
-
+/* ---------- EXPORT ---------- */
 document.getElementById('exportBtn').onclick=async()=>{
-  if(!images.length) return alert('No images to export');
+  if(!images.length) return alert('No images');
   const clone=gallery.cloneNode(true);
   clone.style.position='absolute';
   clone.style.left='0';
   clone.style.top='0';
-  clone.style.background='#f5f5f7';
   document.body.appendChild(clone);
   const canvas=await html2canvas(clone,{scale:2});
   const a=document.createElement('a');
@@ -331,10 +271,6 @@ document.getElementById('exportBtn').onclick=async()=>{
   a.click();
   document.body.removeChild(clone);
 };
-
-refreshBoardUI();
-loadLayout();
 </script>
-
 </body>
 </html>
