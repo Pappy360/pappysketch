@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>PappySketch Smart Canvas</title>
 
 <style>
@@ -10,288 +12,326 @@ body{
   margin:0;
   font-family:-apple-system,BlinkMacSystemFont,sans-serif;
   background:#f5f5f7;
+  overflow-y:auto;
 }
 header{
   height:60px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background:#fff;
-  border-bottom:1px solid #d1d1d6;
-  font-weight:600;
-  position:sticky;
-  top:0;
-  z-index:1000;
-}
-.controls{
-  position:fixed;
-  top:70px;
-  left:10px;
-  z-index:1001;
-}
-.controls button,
-.controls select,
-.controls input{
-  display:block;
-  margin-bottom:6px;
-  padding:8px 12px;
-  border-radius:8px;
-  border:1px solid #d1d1d6;
-  background:white;
-  cursor:pointer;
-}
-.gallery{
-  position:relative;
-  top:60px;
-}
-.item{
-  position:absolute;
+@@ -50,13 +49,12 @@
 }
 .item img{
   width:100%;
   cursor:pointer;
   user-select:none;
+  cursor:pointer;
   -webkit-user-drag:none;
 }
 #menu{display:none;margin-top:6px;}
 
+/* ===== LIGHTBOX ===== */
+/* LIGHTBOX */
 #lightbox{
   position:fixed;
   inset:0;
-  background:rgba(0,0,0,0.7);
-  display:none;
-  align-items:center;
-  justify-content:center;
-  z-index:2000;
-}
-#lightbox img{
+@@ -70,7 +68,6 @@
   max-width:90vw;
   max-height:90vh;
   border-radius:12px;
+  box-shadow:0 20px 60px rgba(0,0,0,0.4);
 }
 #deleteBtn{
   position:absolute;
-  top:10px;
-  right:10px;
-  background:red;
-  color:white;
-  border:none;
-  border-radius:8px;
-  padding:6px 12px;
+@@ -84,6 +81,7 @@
+  font-weight:600;
   cursor:pointer;
 }
+#menu{display:none;}
 </style>
 </head>
 
-<body>
-
-<header>PappySketch Smart Canvas</header>
-
-<div class="controls">
-  <button id="menuToggle">⋯</button>
-  <div id="menu">
+@@ -97,21 +95,33 @@
     <select id="boardSelect"></select>
     <button id="newBoard">Add Board</button>
     <button id="deleteBoard">Delete Board</button>
-    <input type="file" id="upload" multiple />
+    <input type="file" id="upload" multiple>
     <button id="exportBtn">Export PNG</button>
+    <input type="file" id="upload" multiple />
   </div>
 </div>
 
 <div class="gallery" id="gallery"></div>
 
+<!-- LIGHTBOX -->
 <div id="lightbox">
   <button id="deleteBtn">Delete</button>
   <img id="lightboxImg">
+  <img id="lightboxImg" />
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-
 <script>
-/* ---------- STATE ---------- */
+/* -------------------- DB SETUP -------------------- */
+let db;
+const request = indexedDB.open('PappySketchDB', 1);
+
+request.onupgradeneeded = e => {
+  db = e.target.result;
+  db.createObjectStore('images', { keyPath: 'id' });
+};
+
+request.onsuccess = e => {
+  db = e.target.result;
+  init();
+};
+
+/* -------------------- STATE -------------------- */
 const gallery = document.getElementById('gallery');
 const upload = document.getElementById('upload');
 const boardSelect = document.getElementById('boardSelect');
-const menu = document.getElementById('menu');
-const menuToggle = document.getElementById('menuToggle');
-const lightbox = document.getElementById('lightbox');
-const lightboxImg = document.getElementById('lightboxImg');
-const deleteBtn = document.getElementById('deleteBtn');
+@@ -129,13 +139,15 @@
+let boards = JSON.parse(localStorage.getItem('pappysketch-boards') || '["Main"]');
+let currentBoard = localStorage.getItem('pappysketch-current') || boards[0];
 
-let boards = JSON.parse(localStorage.getItem('boards') || '["Main"]');
-let currentBoard = localStorage.getItem('currentBoard') || boards[0];
-let images = [];
-const columns = 3;
-let activeItem = null;
-
-/* ---------- HELPERS ---------- */
-function fileToBase64(file){
-  return new Promise((resolve,reject)=>{
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-function boardKey(b){ return `board-${b}`; }
+function boardKey(b){ return `pappysketch-board-${b}`; }
+const boardKey = b => `pappysketch-board-${b}`;
 
 function saveBoards(){
-  localStorage.setItem('boards', JSON.stringify(boards));
-  localStorage.setItem('currentBoard', currentBoard);
+  localStorage.setItem('pappysketch-boards',JSON.stringify(boards));
+  localStorage.setItem('pappysketch-current',currentBoard);
+/* -------------------- INIT -------------------- */
+function init(){
+  refreshBoardUI();
+  loadLayout();
 }
 
-function saveLayout(){
-  const data = images.map(i=>({
-    src: i.querySelector('img').src
-  }));
-  localStorage.setItem(boardKey(currentBoard), JSON.stringify(data));
-}
-
-function loadLayout(){
-  gallery.innerHTML='';
-  images=[];
-  const saved = JSON.parse(localStorage.getItem(boardKey(currentBoard))||'[]');
-  saved.forEach(d=>{
-    const item = document.createElement('div');
-    item.className='item';
-    const img = new Image();
-    img.src = d.src;
-    img.onload = reflowMasonry;
-    item.appendChild(img);
-    gallery.appendChild(item);
-    images.push(item);
-    makePreviewable(item);
-  });
-}
-
-/* ---------- UI ---------- */
+/* -------------------- BOARD UI -------------------- */
 function refreshBoardUI(){
   boardSelect.innerHTML='';
   boards.forEach(b=>{
-    const opt = document.createElement('option');
-    opt.value = opt.textContent = b;
-    boardSelect.appendChild(opt);
+@@ -147,32 +159,35 @@
   });
-  boardSelect.value = currentBoard;
 }
 
-/* ---------- LAYOUT ---------- */
+function updateGalleryHeight(){
+  gallery.style.height=Math.max(...images.map(i=>i.offsetTop+i.offsetHeight),0)+'px';
+function saveBoards(){
+  localStorage.setItem('pappysketch-boards',JSON.stringify(boards));
+  localStorage.setItem('pappysketch-current',currentBoard);
+}
+
+/* -------------------- LAYOUT -------------------- */
 function reflowMasonry(){
-  const w = gallery.clientWidth;
-  const colW = Math.floor(w / columns);
-  const heights = Array(columns).fill(0);
+  const w=gallery.clientWidth;
+  const colW=Math.floor(w/columns);
+  const heights=new Array(columns).fill(0);
+  const colW = Math.floor(gallery.clientWidth / columns);
+  const heights = new Array(columns).fill(0);
 
   images.forEach(item=>{
-    const img = item.querySelector('img');
-    const ratio = img.naturalHeight / img.naturalWidth;
-    img.style.width = colW+'px';
-    img.style.height = colW*ratio+'px';
-    const col = heights.indexOf(Math.min(...heights));
-    item.style.left = col*colW+'px';
-    item.style.top = heights[col]+'px';
-    heights[col] += img.offsetHeight;
+    const img=item.querySelector('img');
+    const r=img.naturalHeight/img.naturalWidth;
+    const ratio=img.naturalHeight/img.naturalWidth;
+    img.style.width=colW+'px';
+    img.style.height=colW*r+'px';
+    img.style.height=colW*ratio+'px';
+    const col=heights.indexOf(Math.min(...heights));
+    item.style.left=col*colW+'px';
+    item.style.top=heights[col]+'px';
+    heights[col]+=img.offsetHeight;
   });
-  gallery.style.height = Math.max(...heights)+'px';
+  updateGalleryHeight();
+
+  gallery.style.height=Math.max(...heights,0)+'px';
 }
 
-/* ---------- PREVIEW ---------- */
+/* -------------------- SAVE / LOAD -------------------- */
+function saveLayout(){
+  localStorage.setItem(
+    boardKey(currentBoard),
+    JSON.stringify(images.map(i=>({src:i.querySelector('img').src})))
+    JSON.stringify(images.map(i=>({id:i.dataset.id})))
+  );
+}
+
+@@ -181,54 +196,94 @@
+  images=[];
+}
+
 function makePreviewable(item){
-  item.querySelector('img').onclick = ()=>{
-    activeItem = item;
-    lightboxImg.src = item.querySelector('img').src;
+  const img=item.querySelector('img');
+  img.onclick=()=>{
+    activeItem=item;
+    lightboxImg.src=img.src;
     lightbox.style.display='flex';
   };
 }
 
-/* ---------- UPLOAD (FIXED) ---------- */
-upload.onchange = async e=>{
-  for(const file of e.target.files){
-    const base64 = await fileToBase64(file);
-
-    const item = document.createElement('div');
+function loadLayout(){
+  clearGallery();
+  const saved=JSON.parse(localStorage.getItem(boardKey(currentBoard))||'[]');
+  saved.forEach(d=>{
+    const item=document.createElement('div');
     item.className='item';
+    const img=new Image();
+    img.src=d.src;
+    item.appendChild(img);
+    gallery.appendChild(item);
+    images.push(item);
+    img.onload=reflowMasonry;
+    makePreviewable(item);
+  });
+}
+  const tx=db.transaction('images','readonly');
+  const store=tx.objectStore('images');
 
-    const img = new Image();
-    img.src = base64;
-    img.onload = ()=>{
+upload.onchange=e=>{
+  [...e.target.files].forEach(f=>{
+    const img=new Image();
+    img.src=URL.createObjectURL(f);
+    img.onload=()=>{
+      URL.revokeObjectURL(img.src);
+  saved.forEach(({id})=>{
+    const req=store.get(id);
+    req.onsuccess=()=>{
+      if(!req.result) return;
+      const item=document.createElement('div');
+      item.className='item';
+      item.dataset.id=id;
+
+      const img=new Image();
+      img.src=URL.createObjectURL(req.result.blob);
+      img.onload=()=>{URL.revokeObjectURL(img.src);reflowMasonry();};
+
+      item.appendChild(img);
+      gallery.appendChild(item);
+      images.push(item);
+      makePreviewable(item);
       reflowMasonry();
       saveLayout();
     };
+  });
+}
+
+/* -------------------- UPLOAD -------------------- */
+upload.onchange=e=>{
+  [...e.target.files].forEach(file=>{
+    const id=crypto.randomUUID();
+    const tx=db.transaction('images','readwrite');
+    tx.objectStore('images').put({id,blob:file});
+
+    const item=document.createElement('div');
+    item.className='item';
+    item.dataset.id=id;
+
+    const img=new Image();
+    img.src=URL.createObjectURL(file);
+    img.onload=()=>{URL.revokeObjectURL(img.src);reflowMasonry();saveLayout();};
 
     item.appendChild(img);
     gallery.appendChild(item);
     images.push(item);
     makePreviewable(item);
-  }
+  });
   upload.value='';
 };
 
-/* ---------- LIGHTBOX ---------- */
-lightbox.onclick = e=>{
-  if(e.target === lightbox){
+/* -------------------- LIGHTBOX -------------------- */
+function makePreviewable(item){
+  item.querySelector('img').onclick=()=>{
+    activeItem=item;
+    lightboxImg.src=item.querySelector('img').src;
+    lightbox.style.display='flex';
+  };
+}
+
+lightbox.onclick=e=>{
+  if(e.target===lightbox){
     lightbox.style.display='none';
     activeItem=null;
   }
 };
 
-deleteBtn.onclick = ()=>{
+deleteBtn.onclick=()=>{
   if(!activeItem) return;
+  const id=activeItem.dataset.id;
+  db.transaction('images','readwrite').objectStore('images').delete(id);
   activeItem.remove();
-  images = images.filter(i=>i!==activeItem);
+  images=images.filter(i=>i!==activeItem);
   activeItem=null;
   lightbox.style.display='none';
   reflowMasonry();
   saveLayout();
 };
 
-/* ---------- MENU ---------- */
-menuToggle.onclick = ()=>menu.style.display = menu.style.display==='block'?'none':'block';
+/* -------------------- MENU & BOARDS -------------------- */
+menuToggle.onclick=()=>menu.style.display=menu.style.display==='block'?'none':'block';
 
-/* ---------- BOARDS ---------- */
-boardSelect.onchange = ()=>{
-  currentBoard = boardSelect.value;
+window.addEventListener('click',e=>{
+  if(!menu.contains(e.target)&&e.target!==menuToggle) menu.style.display='none';
+});
+
+boardSelect.onchange=()=>{
+  clearGallery();
+  currentBoard=boardSelect.value;
+  loadLayout();
   saveBoards();
   loadLayout();
 };
 
-document.getElementById('newBoard').onclick = ()=>{
-  const name = prompt('Board name');
-  if(!name) return;
-  boards.push(name);
-  currentBoard = name;
-  saveBoards();
-  refreshBoardUI();
-  loadLayout();
-};
-
-document.getElementById('deleteBoard').onclick = ()=>{
-  if(boards.length<=1) return;
-  boards = boards.filter(b=>b!==currentBoard);
-  currentBoard = boards[0];
+document.getElementById('newBoard').onclick=()=>{
+@@ -249,58 +304,9 @@
+  currentBoard=boards[0];
   saveBoards();
   refreshBoardUI();
+  clearGallery();
   loadLayout();
 };
 
-/* ---------- EXPORT ---------- */
-document.getElementById('exportBtn').onclick = async()=>{
-  if(!images.length) return alert('No images');
-  const clone = gallery.cloneNode(true);
+menuToggle.onclick=()=>menu.style.display=menu.style.display==='block'?'none':'block';
+window.addEventListener('click',e=>{
+  if(!menu.contains(e.target)&&e.target!==menuToggle) menu.style.display='none';
+});
+
+/* LIGHTBOX CONTROLS */
+lightbox.onclick=e=>{
+  if(e.target===lightbox){
+    lightbox.style.display='none';
+    activeItem=null;
+  }
+};
+
+deleteBtn.onclick=()=>{
+  if(!activeItem) return;
+  activeItem.remove();
+  images=images.filter(i=>i!==activeItem);
+  activeItem=null;
+  lightbox.style.display='none';
+  reflowMasonry();
+  saveLayout();
+};
+
+window.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    lightbox.style.display='none';
+    activeItem=null;
+  }
+});
+
+document.getElementById('exportBtn').onclick=async()=>{
+  if(!images.length) return alert('No images to export');
+  const clone=gallery.cloneNode(true);
   clone.style.position='absolute';
   clone.style.left='0';
   clone.style.top='0';
   clone.style.background='#f5f5f7';
   document.body.appendChild(clone);
-  const canvas = await html2canvas(clone,{scale:2});
-  const a = document.createElement('a');
-  a.href = canvas.toDataURL();
-  a.download = currentBoard+'.png';
+  const canvas=await html2canvas(clone,{scale:2});
+  const a=document.createElement('a');
+  a.download=currentBoard+'.png';
+  a.href=canvas.toDataURL();
   a.click();
   document.body.removeChild(clone);
 };
 
-/* ---------- INIT ---------- */
 refreshBoardUI();
 loadLayout();
 </script>
