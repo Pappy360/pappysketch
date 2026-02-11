@@ -5,32 +5,71 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PappySketch Smart Canvas</title>
 
+<!-- Nunito Font -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+
 <style>
+*{
+  font-family:"Nunito",system-ui,-apple-system,BlinkMacSystemFont,sans-serif;
+}
+
 body{
   margin:0;
-  font-family:-apple-system,BlinkMacSystemFont,sans-serif;
   background:#f5f5f7;
 }
+
 header{
   height:60px;
   background:#fff;
   display:flex;
   align-items:center;
   padding:0 12px;
+  gap:10px;
   box-shadow:0 2px 8px rgba(0,0,0,0.08);
 }
+
+button, select, input[type="file"]{
+  height:40px;
+  padding:0 14px;
+  border-radius:10px;
+  border:1px solid #d1d1d6;
+  background:#fff;
+  font-size:15px;
+  cursor:pointer;
+}
+
+button:hover, select:hover{
+  background:#f2f2f7;
+}
+
+#menuToggle{
+  width:42px;
+  height:42px;
+  font-size:20px;
+  border-radius:12px;
+}
+
+#menu{
+  display:none;
+  gap:10px;
+  align-items:center;
+}
+
 .gallery{
   position:relative;
 }
+
 .item{
   position:absolute;
 }
+
 .item img{
   width:100%;
   cursor:pointer;
   -webkit-user-drag:none;
 }
-#menu{display:none;margin-top:6px;}
 
 #lightbox{
   position:fixed;
@@ -41,21 +80,44 @@ header{
   justify-content:center;
   z-index:1000;
 }
-#lightbox img{
+
+#lightboxContent{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
   max-width:90vw;
   max-height:90vh;
+}
+
+#lightbox img{
+  max-width:90vw;
+  max-height:65vh;
+  object-fit:contain;
   border-radius:12px;
 }
+
+#noteBox{
+  width:100%;
+  min-height:80px;
+  padding:12px;
+  font-size:15px;
+  border-radius:12px;
+  border:1px solid #d1d1d6;
+  resize:vertical;
+  outline:none;
+}
+
+#noteBox:focus{
+  border-color:#007aff;
+}
+
 #deleteBtn{
-  position:absolute;
-  top:20px;
-  right:20px;
+  align-self:flex-end;
+  height:44px;
+  padding:0 16px;
   background:red;
   color:white;
   border:none;
-  padding:8px 12px;
-  border-radius:6px;
-  cursor:pointer;
 }
 </style>
 </head>
@@ -76,25 +138,28 @@ header{
 <div class="gallery" id="gallery"></div>
 
 <div id="lightbox">
-  <button id="deleteBtn">Delete</button>
-  <img id="lightboxImg">
+  <div id="lightboxContent">
+    <button id="deleteBtn">Delete</button>
+    <img id="lightboxImg">
+    <textarea id="noteBox" placeholder="Add a note for this image…"></textarea>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script>
-/* ---------- DB ---------- */
 let db;
-const request=indexedDB.open('PappySketchDB',1);
-request.onupgradeneeded=e=>{
-  db=e.target.result;
+const request = indexedDB.open('PappySketchDB',1);
+
+request.onupgradeneeded = e=>{
+  db = e.target.result;
   db.createObjectStore('images',{keyPath:'id'});
 };
-request.onsuccess=e=>{
-  db=e.target.result;
+
+request.onsuccess = e=>{
+  db = e.target.result;
   init();
 };
 
-/* ---------- STATE ---------- */
 const gallery=document.getElementById('gallery');
 const upload=document.getElementById('upload');
 const boardSelect=document.getElementById('boardSelect');
@@ -103,6 +168,7 @@ const menu=document.getElementById('menu');
 const lightbox=document.getElementById('lightbox');
 const lightboxImg=document.getElementById('lightboxImg');
 const deleteBtn=document.getElementById('deleteBtn');
+const noteBox=document.getElementById('noteBox');
 
 let images=[];
 let activeItem=null;
@@ -110,19 +176,11 @@ const columns=3;
 
 let boards=JSON.parse(localStorage.getItem('pappysketch-boards')||'["Main"]');
 let currentBoard=localStorage.getItem('pappysketch-current')||boards[0];
-
 const boardKey=b=>`pappysketch-board-${b}`;
 
-/* ---------- INIT ---------- */
 function init(){
   refreshBoardUI();
   loadLayout();
-}
-
-/* ---------- BOARDS ---------- */
-function saveBoards(){
-  localStorage.setItem('pappysketch-boards',JSON.stringify(boards));
-  localStorage.setItem('pappysketch-current',currentBoard);
 }
 
 function refreshBoardUI(){
@@ -136,7 +194,6 @@ function refreshBoardUI(){
   });
 }
 
-/* ---------- LAYOUT ---------- */
 function reflow(){
   const w=gallery.clientWidth;
   const colW=Math.floor(w/columns);
@@ -155,7 +212,6 @@ function reflow(){
   gallery.style.height=Math.max(...heights,0)+'px';
 }
 
-/* ---------- SAVE / LOAD ---------- */
 function saveLayout(){
   localStorage.setItem(
     boardKey(currentBoard),
@@ -163,26 +219,21 @@ function saveLayout(){
   );
 }
 
-function clearGallery(){
+function loadLayout(){
   gallery.innerHTML='';
   images=[];
-}
-
-function loadLayout(){
-  clearGallery();
   const saved=JSON.parse(localStorage.getItem(boardKey(currentBoard))||'[]');
-  const tx=db.transaction('images','readonly').objectStore('images');
+  const store=db.transaction('images','readonly').objectStore('images');
 
   saved.forEach(({id})=>{
-    const req=tx.get(id);
-    req.onsuccess=()=>{
-      if(!req.result) return;
+    store.get(id).onsuccess=e=>{
+      if(!e.target.result) return;
       const item=document.createElement('div');
       item.className='item';
       item.dataset.id=id;
 
       const img=new Image();
-      img.src=URL.createObjectURL(req.result.blob);
+      img.src=URL.createObjectURL(e.target.result.blob);
       img.onload=()=>{URL.revokeObjectURL(img.src);reflow();};
 
       item.appendChild(img);
@@ -193,13 +244,12 @@ function loadLayout(){
   });
 }
 
-/* ---------- UPLOAD ---------- */
 upload.onchange=e=>{
   [...e.target.files].forEach(file=>{
     const id=crypto.randomUUID();
     db.transaction('images','readwrite')
       .objectStore('images')
-      .put({id,blob:file});
+      .put({id,blob:file,note:''});
 
     const item=document.createElement('div');
     item.className='item';
@@ -217,20 +267,29 @@ upload.onchange=e=>{
   upload.value='';
 };
 
-/* ---------- LIGHTBOX ---------- */
 function makePreviewable(item){
   item.querySelector('img').onclick=()=>{
     activeItem=item;
     lightboxImg.src=item.querySelector('img').src;
     lightbox.style.display='flex';
+
+    db.transaction('images','readonly')
+      .objectStore('images')
+      .get(item.dataset.id).onsuccess=e=>{
+        noteBox.value=e.target.result?.note||'';
+      };
   };
 }
 
-lightbox.onclick=e=>{
-  if(e.target===lightbox){
-    lightbox.style.display='none';
-    activeItem=null;
-  }
+noteBox.oninput=()=>{
+  if(!activeItem) return;
+  const id=activeItem.dataset.id;
+  const store=db.transaction('images','readwrite').objectStore('images');
+  store.get(id).onsuccess=e=>{
+    const data=e.target.result;
+    data.note=noteBox.value;
+    store.put(data);
+  };
 };
 
 deleteBtn.onclick=()=>{
@@ -245,24 +304,26 @@ deleteBtn.onclick=()=>{
   saveLayout();
 };
 
-/* ---------- MENU ---------- */
+lightbox.onclick=e=>{
+  if(e.target===lightbox){
+    lightbox.style.display='none';
+    activeItem=null;
+  }
+};
+
 menuToggle.onclick=()=>{
   menu.style.display=menu.style.display==='block'?'none':'block';
 };
 
 boardSelect.onchange=()=>{
   currentBoard=boardSelect.value;
-  saveBoards();
+  localStorage.setItem('pappysketch-current',currentBoard);
   loadLayout();
 };
 
-/* ---------- EXPORT ---------- */
 document.getElementById('exportBtn').onclick=async()=>{
-  if(!images.length) return alert('No images');
+  if(!images.length) return;
   const clone=gallery.cloneNode(true);
-  clone.style.position='absolute';
-  clone.style.left='0';
-  clone.style.top='0';
   document.body.appendChild(clone);
   const canvas=await html2canvas(clone,{scale:2});
   const a=document.createElement('a');
